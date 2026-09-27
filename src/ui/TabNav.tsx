@@ -139,6 +139,14 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
           moving = true;
         }
       }
+      // Keep every pill edge inside the bar: nothing may pass Home's left end or Settings' right end.
+      for (const key of EDGE_KEYS) {
+        if (pos[key] < 0 || pos[key] > BAR.w) {
+          pos[key] = Math.min(BAR.w, Math.max(0, pos[key]));
+          vel[key] = 0;
+        }
+      }
+      if (pos.activeLeft > pos.activeRight) pos.activeLeft = pos.activeRight;
       position.current = pos;
       velocity.current = vel;
       setEdges(pos);
@@ -149,19 +157,24 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
   }, [index, dot]);
 
   const pillH = BAR.h * s;
-  const path = useMemo(
-    () =>
-      gooeyPath(
-        [
-          { left: 0, right: edges.beforeRight * s },
-          { left: edges.activeLeft * s, right: edges.activeRight * s },
-          { left: edges.afterLeft * s, right: BAR.w * s },
-        ],
-        pillH,
-        BRIDGE_REACH * s,
-      ),
-    [edges, s, pillH],
-  );
+  const path = useMemo(() => {
+    // A side group that is emptying (moving to Home or to Settings) keeps full pill height
+    // until the active pill has covered it, so it's absorbed at the bar's end instead of
+    // shrinking into a little dot that pokes out past the active pill's curve.
+    let beforeRight = edges.beforeRight;
+    if (index === 0 && beforeRight > 0.01) beforeRight = Math.max(beforeRight, BAR.h);
+    let afterLeft = edges.afterLeft;
+    if (index === TABS.length - 1 && afterLeft < BAR.w - 0.01) afterLeft = Math.min(afterLeft, BAR.w - BAR.h);
+    return gooeyPath(
+      [
+        { left: 0, right: beforeRight * s },
+        { left: edges.activeLeft * s, right: edges.activeRight * s },
+        { left: afterLeft * s, right: BAR.w * s },
+      ],
+      pillH,
+      BRIDGE_REACH * s,
+    );
+  }, [edges, index, s, pillH]);
   const dotX = useMemo(
     () =>
       dot.interpolate({
@@ -185,13 +198,8 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
         pointerEvents="none"
         style={{ position: 'absolute', left: frame.left(BAR.x), top, width: BAR.w * s, height: GROUP_H * s }}
       >
-        {/* Drawn a little wider than the bar so overshooting springs aren't clipped. */}
-        <Svg
-          width={(BAR.w + 40) * s}
-          height={pillH}
-          viewBox={`${-20 * s} 0 ${(BAR.w + 40) * s} ${pillH}`}
-          style={{ position: 'absolute', left: -20 * s, top: 0 }}
-        >
+        {/* Exactly the bar's width: the morph can never draw outside Home's and Settings' ends. */}
+        <Svg width={BAR.w * s} height={pillH} style={{ position: 'absolute', left: 0, top: 0 }}>
           <Path d={path} fill="#fff" />
         </Svg>
 

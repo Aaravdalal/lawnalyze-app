@@ -23,10 +23,14 @@ export type WeatherIconKind =
 
 export type ForecastSlot = { label: string; icon: WeatherIconKind; temperature: number };
 
+/** Which Apple-style background the widget shows. */
+export type Sky = 'day' | 'sunset' | 'night' | 'rain';
+
 export type Weather = {
   temperature: number;
   condition: string;
   icon: WeatherIconKind;
+  sky: Sky;
   /** Next few hours, with sunrise/sunset slotted in when they fall inside the window. */
   hourly: ForecastSlot[];
 };
@@ -51,6 +55,9 @@ function describe(code: number, isDay: boolean): { condition: string; icon: Weat
   return { condition: 'Cloudy', icon: 'cloudy' };
 }
 
+/** Rain, drizzle, showers and storms (WMO codes) get the rainy background. */
+const isWet = (code: number) => (code >= 51 && code <= 67) || (code >= 80 && code <= 82) || code >= 95;
+
 // Open-Meteo returns local times ("2026-09-26T21:00") in the location's timezone; compare
 // and format them as plain wall-clock values so the phone's own timezone doesn't matter.
 const hourOf = (time: string) => Number(time.slice(11, 13));
@@ -59,6 +66,21 @@ function hourLabel(time: string) {
   const h = hourOf(time);
   return `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'AM' : 'PM'}`;
 }
+/** Minutes since the epoch for a local wall-clock time string (only used for differences). */
+const minutesOf = (time: string) =>
+  Date.UTC(Number(time.slice(0, 4)), Number(time.slice(5, 7)) - 1, Number(time.slice(8, 10)), hourOf(time), minuteOf(time)) /
+  60_000;
+
+/** Rain > around sunrise/sunset > night > day. */
+function skyFor(data: ForecastResponse): Sky {
+  if (isWet(data.current.weather_code)) return 'rain';
+  const now = minutesOf(data.current.time);
+  const near = (times: string[], before: number, after: number) =>
+    times.some((time) => now >= minutesOf(time) - before && now <= minutesOf(time) + after);
+  if (near(data.daily.sunset, 45, 40) || near(data.daily.sunrise, 40, 30)) return 'sunset';
+  return data.current.is_day === 1 ? 'day' : 'night';
+}
+
 function clockLabel(time: string) {
   const h = hourOf(time);
   return `${h % 12 === 0 ? 12 : h % 12}:${String(minuteOf(time)).padStart(2, '0')}`;
@@ -101,6 +123,7 @@ function toWeather(data: ForecastResponse): Weather {
     temperature: Math.round(data.current.temperature_2m),
     condition: now.condition,
     icon: now.icon,
+    sky: skyFor(data),
     hourly: slots.slice(0, HOURS_SHOWN).map(({ label, icon, temperature }) => ({ label, icon, temperature })),
   };
 }
