@@ -1,26 +1,72 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { Linking, Pressable, StyleSheet, Text } from 'react-native';
 
-import { useAppState, type Preferences } from '@/lib/app-state';
-import { useFocusCount } from '@/lib/use-focus-count';
-import { Artboard, TAB_CHIN_DROP, Hotspot, Layer, PressableLayer } from '@/ui/Artboard';
+import { HOME_SECTIONS, useAppState, type Units } from '@/lib/app-state';
+import { dimensionLabels } from '@/lib/dimensions';
+import { KC_COOL_SEASON, useLawnEstimate } from '@/lib/estimate';
+import { requestWeatherAlertPermission, sendWeatherAlertNow, weatherAlertsSupported } from '@/lib/weather-alerts';
+import { Artboard, GREEN, TAB_CHIN_DROP, Hotspot, Layer, PressableLayer, useFrame, useRect } from '@/ui/Artboard';
 import { ui, type UiAsset } from '@/ui/assets';
+import { DesignText } from '@/ui/DesignText';
+import { Dialog } from '@/ui/Dialog';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, settings } = ui;
 
-// Lawnalyze UI (7).zip
+/** The Edit Lawn / Show dimensions / Reset Placement buttons sit this much lower than in Figma. */
+const EDIT_SHIFT = 16;
+
+type Message = { title: string; message: string; openSettings?: boolean };
+
+// Lawnalyze UI (7).zip. Choices apply as soon as they're tapped.
 export default function SettingsScreen() {
-  // Each time this tab is shown, have the map reload any tiles it lost while hidden.
-  const focusCount = useFocusCount();
   const { lawn, outlines, preferences, setPreferences } = useAppState();
-  // Choices apply when "Confirm changes" is pressed.
-  const [draft, setDraft] = useState<Preferences>(preferences);
+  const [message, setMessage] = useState<Message | null>(null);
+  const { showDimensions } = preferences;
+  const estimate = useLawnEstimate(lawn, outlines);
+  const labels = useMemo(
+    () => (showDimensions ? dimensionLabels(outlines, preferences.units) : undefined),
+    [showDimensions, outlines, preferences.units],
+  );
+
+  function setUnits(units: Units) {
+    setPreferences({ ...preferences, units });
+  }
+
+  async function turnOnWeatherAlerts() {
+    if (!weatherAlertsSupported) {
+      setPreferences({ ...preferences, weatherAlerts: true });
+      return;
+    }
+    try {
+      if (!(await requestWeatherAlertPermission())) {
+        setMessage({
+          title: 'Notifications are off',
+          message:
+            "Your phone is blocking notifications from this app. Tap Open Settings, turn on notifications, then come back and tap this option again.",
+          openSettings: true,
+        });
+        return;
+      }
+      setPreferences({ ...preferences, weatherAlerts: true });
+      // Show today's update right away, so you can see what arrives each morning.
+      await sendWeatherAlertNow({ lawn, outlines, units: preferences.units, kc: estimate?.kc ?? KC_COOL_SEASON });
+    } catch (error) {
+      setMessage({ title: "Couldn't set up notifications", message: String(error instanceof Error ? error.message : error) });
+    }
+  }
+
+  function closeMessage() {
+    if (message?.openSettings) Linking.openSettings().catch(() => {});
+    setMessage(null);
+  }
+
+  const y = (value: number) => value + EDIT_SHIFT;
 
   return (
     <Artboard
       cardBottom={568}
-      footer={common.footerGreenTabs}
       compactChin={TAB_CHIN_DROP}
       glows={[
         { asset: common.glow, x: -284, y: -15 },
@@ -34,77 +80,168 @@ export default function SettingsScreen() {
       <Layer asset={settings.titleMeasurement} x={41} y={146} />
       <OptionRow
         y={170}
+        position="top"
         text={settings.textCustomary}
-        selected={draft.units === 'customary'}
-        onPress={() => setDraft({ ...draft, units: 'customary' })}
-        label="Customary System"
+        selected={preferences.units === 'customary'}
+        onPress={() => setUnits('customary')}
+        label="US Customary System"
       />
       <OptionRow
         y={207}
-        text={settings.textImperial}
-        selected={draft.units === 'imperial'}
-        onPress={() => setDraft({ ...draft, units: 'imperial' })}
-        label="Imperial System"
+        position="bottom"
+        text="Metric System"
+        selected={preferences.units === 'metric'}
+        onPress={() => setUnits('metric')}
+        label="Metric System"
       />
 
       <Layer asset={settings.boxPanel} x={23} y={264} />
       <Layer asset={settings.titleNotifications} x={41} y={280} />
       <OptionRow
         y={304}
+        position="top"
         text={settings.textWeatherEvents}
-        selected={draft.weatherAlerts}
-        onPress={() => setDraft({ ...draft, weatherAlerts: true })}
+        selected={preferences.weatherAlerts}
+        onPress={turnOnWeatherAlerts}
         label="Get Notified For Weather Events"
       />
       <OptionRow
         y={341}
+        position="bottom"
         text={settings.textNoThanks}
-        selected={!draft.weatherAlerts}
-        onPress={() => setDraft({ ...draft, weatherAlerts: false })}
+        selected={!preferences.weatherAlerts}
+        onPress={() => setPreferences({ ...preferences, weatherAlerts: false })}
         label="No thanks"
       />
 
-      <SatelliteSlot x={22} y={397} w={159} h={151} radius={20} bordered center={lawn} zoom={18} outlines={outlines} showPin={false} refreshToken={focusCount} />
+      <SatelliteSlot
+        x={22}
+        y={397}
+        w={159}
+        h={151}
+        radius={20}
+        bordered
+        center={lawn}
+        zoom={18}
+        outlines={outlines}
+        // With dimensions on, zoom in on the lawn so its measurements are readable.
+        fitPadding={showDimensions ? 14 : undefined}
+        labels={labels}
+      />
 
-      <Layer asset={settings.boxEditPanel} x={189} y={404} />
+      <Layer asset={settings.boxEditPanel} x={189} y={y(404)} />
       <PressableLayer
         asset={settings.rowEditLawn}
         x={197}
-        y={409}
+        y={y(409)}
         label="Edit Lawn"
         onPress={() => router.push('/onboarding/mark')}
       />
-      <Layer asset={settings.textEditLawn} x={206} y={419} />
-      <PressableLayer
-        asset={settings.rowShowDimensions}
-        x={197}
-        y={442}
-        label="Show dimensions"
-        onPress={() => router.push('/onboarding/footage')}
+      <Layer asset={settings.textEditLawn} x={206} y={y(419)} />
+      <ToggleRow
+        y={y(442)}
+        on={showDimensions}
+        onPress={() => setPreferences({ ...preferences, showDimensions: !showDimensions })}
       />
-      <Layer asset={settings.textShowDimensions} x={205} y={452} />
 
-      <Layer asset={settings.btnOutline} x={189} y={486} />
-      <Layer asset={settings.btnOutlineFill} x={194} y={490} />
-      <Layer asset={settings.textEditPlacement} x={217} y={494} />
-      <Hotspot x={189} y={486} w={130} h={24} label="Edit Placement" onPress={() => router.push('/onboarding/locate')} />
-
-      <Layer asset={settings.btnConfirm} x={189} y={517} />
-      <Layer asset={settings.textConfirmChanges} x={214} y={524} />
-      <Hotspot x={189} y={517} w={130} h={24} label="Confirm changes" onPress={() => setPreferences(draft)} />
+      <ResetPlacementButton
+        y={y(489)}
+        onPress={() => {
+          setPreferences({ ...preferences, homeOrder: HOME_SECTIONS });
+          setMessage({
+            title: 'Placement reset',
+            message: 'Home is back to its original layout. To move things around, press and hold a section on Home, then drag it.',
+          });
+        }}
+      />
+      <Dialog
+        visible={message !== null}
+        title={message?.title ?? ''}
+        message={message?.message}
+        buttonLabel={message?.openSettings ? 'Open Settings' : 'Okay'}
+        onClose={closeMessage}
+      />
     </Artboard>
   );
 }
 
-type OptionRowProps = { y: number; text: UiAsset; selected: boolean; onPress: () => void; label: string };
+type OptionRowProps = {
+  y: number;
+  /** Top or bottom row of its panel: the rounder corners go on the side facing the panel's edge. */
+  position: 'top' | 'bottom';
+  text: UiAsset | string;
+  selected: boolean;
+  onPress: () => void;
+  label: string;
+};
 
-/** A preference row: the green row export when selected, the grey one otherwise. */
-function OptionRow({ y, text, selected, onPress, label }: OptionRowProps) {
+/**
+ * A preference row: the green row export when selected, the grey one otherwise. In Figma the
+ * green one is the top row (rounder top corners) and the grey one the bottom row (rounder
+ * bottom corners), so each is flipped when it's in the other row.
+ */
+function OptionRow({ y, position, text, selected, onPress, label }: OptionRowProps) {
+  const flip = selected ? position === 'bottom' : position === 'top';
   return (
     <>
-      <Layer asset={selected ? settings.rowSelected : settings.rowUnselected} x={34} y={y} />
-      <Layer asset={text} x={42} y={y + 10} />
+      <Layer asset={selected ? settings.rowSelected : settings.rowUnselected} x={34} y={y} flip={flip} />
+      {typeof text === 'string' ? (
+        // Live text in the Figma row font, where there's no export for the wording.
+        <DesignText x={42} y={y + 7} w={200} h={17} size={13}>
+          {text}
+        </DesignText>
+      ) : (
+        <Layer asset={text} x={42} y={y + 10} />
+      )}
       <Hotspot x={34} y={y} w={272} h={30} label={label} onPress={onPress} />
     </>
   );
 }
+
+/** "Show dimensions": the row turns green (same shape) while the maps show the lawn's measurements. */
+function ToggleRow({ y, on, onPress }: { y: number; on: boolean; onPress: () => void }) {
+  const { w, h } = settings.rowShowDimensions;
+  return (
+    <>
+      <Layer asset={settings.rowShowDimensions} x={197} y={y} tint={on ? GREEN : undefined} />
+      <Layer asset={settings.textShowDimensions} x={205} y={y + 10} />
+      <Hotspot x={197} y={y} w={w} h={h} label={on ? 'Hide dimensions' : 'Show dimensions'} onPress={onPress} />
+    </>
+  );
+}
+
+/** Puts Home's sections back in their original order (they're rearranged by dragging on Home). */
+function ResetPlacementButton({ y, onPress }: { y: number; onPress: () => void }) {
+  const rect = useRect({ x: 189, y }, 130, 34);
+  const { scale: s } = useFrame();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Reset Placement"
+      onPress={onPress}
+      style={({ pressed }) => [
+        rect,
+        styles.outline,
+        { borderRadius: 17 * s, padding: 4 * s, opacity: pressed ? 0.7 : 1 },
+      ]}
+    >
+      <Text style={[styles.inner, { borderRadius: 13 * s, fontSize: 13 * s, lineHeight: 24 * s }]} maxFontSizeMultiplier={1.1}>
+        Reset Placement
+      </Text>
+    </Pressable>
+  );
+}
+
+const styles = StyleSheet.create({
+  // Same look as the Figma outlined button: white pill, grey outline, light grey inner pill.
+  outline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#CCCDCE' },
+  inner: {
+    flex: 1,
+    overflow: 'hidden',
+    backgroundColor: '#F4F4F4',
+    textAlign: 'center',
+    textAlignVertical: 'center',
+    fontFamily: 'GoogleSansFlex_400Regular',
+    color: '#000',
+  },
+});

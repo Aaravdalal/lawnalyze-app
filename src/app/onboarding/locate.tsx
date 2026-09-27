@@ -5,10 +5,10 @@ import { ActivityIndicator, StyleSheet } from 'react-native';
 import { useAppState } from '@/lib/app-state';
 import { geocodeAddress, reverseGeocode, type AddressQuery } from '@/lib/geocode';
 import { getDeviceLocation, type LatLng } from '@/lib/location';
-import { notify } from '@/lib/notify';
 import { AddressFields } from '@/ui/AddressFields';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer, useFrame } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
+import { Dialog } from '@/ui/Dialog';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, locate } = ui;
@@ -43,6 +43,9 @@ export default function LocateScreen() {
     lawn ? { query: { address: lawn.address, city: lawn.city, state: lawn.state }, spot: lawn } : null,
   );
   const [searching, setSearching] = useState(false);
+  // A problem finding the address, shown in the app's rounded dialog.
+  const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
+  const notify = (title: string, message: string) => setNotice({ title, message });
   // Latest form, for the async location lookup below.
   const formRef = useRef(form);
   useEffect(() => {
@@ -128,6 +131,8 @@ export default function LocateScreen() {
         center={located?.spot ?? null}
         zoom={19}
         interactive
+        showPin
+        flyIn
       />
       <PressableLayer
         asset={locate.btnFindMyLawn}
@@ -141,6 +146,7 @@ export default function LocateScreen() {
       >
         {searching && <ButtonSpinner />}
       </PressableLayer>
+      <Dialog visible={notice !== null} title={notice?.title ?? ''} message={notice?.message} onClose={() => setNotice(null)} />
     </Artboard>
   );
 }

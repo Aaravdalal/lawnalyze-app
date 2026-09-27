@@ -5,11 +5,9 @@ export type UiAsset = { source: number; w: number; h: number };
 
 export const ui = {
   common: {
-    baseWhite: { source: require('../../assets/ui/common/base-white.png'), w: 340, h: 640 },
     box115x85: { source: require('../../assets/ui/common/box-115x85.png'), w: 115, h: 85 },
     box160x85: { source: require('../../assets/ui/common/box-160x85.png'), w: 160, h: 85 },
     cardBottom: { source: require('../../assets/ui/common/card-bottom.png'), w: 340, h: 87 },
-    footerGreenTabs: { source: require('../../assets/ui/common/footer-green-tabs.png'), w: 340, h: 120 },
     footerGreen: { source: require('../../assets/ui/common/footer-green.png'), w: 340, h: 176 },
     glowTall: { source: require('../../assets/ui/common/glow-tall.png'), w: 432, h: 537 },
     glowWide: { source: require('../../assets/ui/common/glow-wide.png'), w: 492, h: 475 },
@@ -19,6 +17,8 @@ export const ui = {
     inputAddress: { source: require('../../assets/ui/common/input-address.png'), w: 270, h: 38 },
     inputCity: { source: require('../../assets/ui/common/input-city.png'), w: 172, h: 38 },
     inputState: { source: require('../../assets/ui/common/input-state.png'), w: 82, h: 38 },
+    labelPerWeek: { source: require('../../assets/ui/common/label-per-week.png'), w: 65, h: 14 },
+    labelPerYear: { source: require('../../assets/ui/common/label-per-year.png'), w: 58, h: 12 },
     labelAddress: { source: require('../../assets/ui/common/label-address.png'), w: 52, h: 10 },
     labelCity: { source: require('../../assets/ui/common/label-city.png'), w: 25, h: 13 },
     labelState: { source: require('../../assets/ui/common/label-state.png'), w: 33, h: 10 },
@@ -70,7 +70,6 @@ export const ui = {
   rebates: {
     boxBest: { source: require('../../assets/ui/rebates/box-best.png'), w: 295, h: 112 },
     boxOther: { source: require('../../assets/ui/rebates/box-other.png'), w: 295, h: 87 },
-    btnBlue: { source: require('../../assets/ui/rebates/btn-blue.png'), w: 243, h: 44 },
     labelBestChoice: { source: require('../../assets/ui/rebates/label-best-choice.png'), w: 86, h: 12 },
     labelOtherChoices: { source: require('../../assets/ui/rebates/label-other-choices.png'), w: 108, h: 12 },
     navRebates: { source: require('../../assets/ui/rebates/nav-rebates.png'), w: 304, h: 26 },
@@ -79,19 +78,13 @@ export const ui = {
   settings: {
     boxEditPanel: { source: require('../../assets/ui/settings/box-edit-panel.png'), w: 130, h: 77 },
     boxPanel: { source: require('../../assets/ui/settings/box-panel.png'), w: 295, h: 119 },
-    btnConfirm: { source: require('../../assets/ui/settings/btn-confirm.png'), w: 130, h: 24 },
-    btnOutlineFill: { source: require('../../assets/ui/settings/btn-outline-fill.png'), w: 120, h: 16 },
-    btnOutline: { source: require('../../assets/ui/settings/btn-outline.png'), w: 130, h: 24 },
     navSettings: { source: require('../../assets/ui/settings/nav-settings.png'), w: 304, h: 26 },
     rowEditLawn: { source: require('../../assets/ui/settings/row-edit-lawn.png'), w: 113, h: 30 },
     rowSelected: { source: require('../../assets/ui/settings/row-selected.png'), w: 272, h: 30 },
     rowShowDimensions: { source: require('../../assets/ui/settings/row-show-dimensions.png'), w: 113, h: 30 },
     rowUnselected: { source: require('../../assets/ui/settings/row-unselected.png'), w: 272, h: 30 },
-    textConfirmChanges: { source: require('../../assets/ui/settings/text-confirm-changes.png'), w: 80, h: 10 },
     textCustomary: { source: require('../../assets/ui/settings/text-customary.png'), w: 110, h: 12 },
     textEditLawn: { source: require('../../assets/ui/settings/text-edit-lawn.png'), w: 51, h: 9 },
-    textEditPlacement: { source: require('../../assets/ui/settings/text-edit-placement.png'), w: 74, h: 8 },
-    textImperial: { source: require('../../assets/ui/settings/text-imperial.png'), w: 92, h: 12 },
     textNoThanks: { source: require('../../assets/ui/settings/text-no-thanks.png'), w: 58, h: 9 },
     textShowDimensions: { source: require('../../assets/ui/settings/text-show-dimensions.png'), w: 94, h: 9 },
     textWeatherEvents: { source: require('../../assets/ui/settings/text-weather-events.png'), w: 188, h: 10 },
@@ -102,6 +95,9 @@ export const ui = {
   usage: {
     box115x70: { source: require('../../assets/ui/usage/box-115x70.png'), w: 115, h: 70 },
     boxDrop: { source: require('../../assets/ui/usage/box-drop.png'), w: 160, h: 152 },
+    labelPerWeekSmall: { source: require('../../assets/ui/usage/label-per-week-small.png'), w: 57, h: 13 },
+    labelPerYearSmall: { source: require('../../assets/ui/usage/label-per-year-small.png'), w: 51, h: 10 },
+    labelUsage: { source: require('../../assets/ui/usage/label-usage.png'), w: 74, h: 22 },
     navUsage: { source: require('../../assets/ui/usage/nav-usage.png'), w: 304, h: 26 },
     textUnitsHint: { source: require('../../assets/ui/usage/text-units-hint.png'), w: 271, h: 23 },
     titleComparison: { source: require('../../assets/ui/usage/title-comparison.png'), w: 261, h: 15 },

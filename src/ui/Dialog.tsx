@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { DESIGN_WIDTH } from './Artboard';
@@ -5,24 +6,30 @@ import { DESIGN_WIDTH } from './Artboard';
 type Props = {
   visible: boolean;
   title: string;
-  message: string;
+  message?: string;
   onClose: () => void;
   buttonLabel?: string;
+  /** Card width in design pts (default 280). */
+  width?: number;
+  /** Extra content between the message and the button (e.g. a map). */
+  children?: ReactNode;
 };
 
 /** A rounded in-app message with the app's blue pill button (styled like "Mark My Lawn"). */
-export function Dialog({ visible, title, message, onClose, buttonLabel = 'Okay' }: Props) {
-  const { width } = useWindowDimensions();
-  const s = Math.min(width, 480) / DESIGN_WIDTH;
+export function Dialog({ visible, title, message, onClose, buttonLabel = 'Okay', width = 280, children }: Props) {
+  const { width: windowWidth } = useWindowDimensions();
+  const s = Math.min(windowWidth, 480) / DESIGN_WIDTH;
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={[styles.card, { width: 280 * s, borderRadius: 26 * s, padding: 20 * s, gap: 8 * s }]}>
+        <View style={[styles.card, { width: width * s, borderRadius: 26 * s, padding: 20 * s, gap: 8 * s }]}>
           <Text style={[styles.title, { fontSize: 18 * s }]}>{title}</Text>
-          <Text style={[styles.message, { fontSize: 14 * s, lineHeight: 20 * s }]}>{message}</Text>
+          {!!message && <Text style={[styles.message, { fontSize: 14 * s, lineHeight: 20 * s }]}>{message}</Text>}
+          {children}
           <Pressable
             accessibilityRole="button"
+            accessibilityLabel={buttonLabel}
             onPress={onClose}
             style={({ pressed }) => [
               styles.button,
@@ -35,6 +42,12 @@ export function Dialog({ visible, title, message, onClose, buttonLabel = 'Okay' 
       </View>
     </Modal>
   );
+}
+
+/** Design-pt scale used by Dialog, for sizing content placed inside one. */
+export function useDialogScale() {
+  const { width } = useWindowDimensions();
+  return Math.min(width, 480) / DESIGN_WIDTH;
 }
 
 const styles = StyleSheet.create({

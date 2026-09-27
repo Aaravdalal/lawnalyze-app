@@ -2,8 +2,10 @@ import { View } from 'react-native';
 
 import { SatelliteMap } from '@/components/satellite/SatelliteMap';
 import type { MapEvent } from '@/components/satellite/satelliteHtml';
+import { StaticSatellite } from '@/components/satellite/StaticSatellite';
 import type { ToolPress } from '@/components/satellite/useSatellitePage';
 import type { Outline } from '@/lib/app-state';
+import type { MapLabel } from '@/lib/dimensions';
 import type { LatLng } from '@/lib/location';
 
 import { useFrame, useRect, type Anchor } from './Artboard';
@@ -27,10 +29,14 @@ type Props = {
   editable?: boolean;
   toolPress?: ToolPress | null;
   onEvent?: (event: MapEvent) => void;
-  /** Blue pin on the house; off once the lawn is confirmed (Home, Settings). */
+  /** Blue pin on the house; only while locating it. */
   showPin?: boolean;
-  /** Bump to make the map re-check its size and reload tiles (e.g. when its tab is shown). */
-  refreshToken?: number;
+  /** Fly in from zoomed out when the location arrives (Locate); other maps open right on it. */
+  flyIn?: boolean;
+  /** Read-only maps: zoom to fit the outlines with this much room around them (design pts). */
+  fitPadding?: number;
+  /** Read-only maps: tags on the map, e.g. side lengths. */
+  labels?: MapLabel[];
 };
 
 const NO_OUTLINES: Outline[] = [];
@@ -51,35 +57,53 @@ export function SatelliteSlot({
   editable = false,
   toolPress,
   onEvent,
-  showPin = true,
-  refreshToken,
+  showPin = false,
+  flyIn = false,
+  fitPadding,
+  labels,
 }: Props) {
   const rect = useRect({ x, y, anchor }, w, h);
   const { scale } = useFrame();
   const cornerRadius = radius * scale;
+  const border = bordered ? 1 : 0;
 
   return (
     <View
       style={[
         rect,
         { borderRadius: cornerRadius, overflow: 'hidden', backgroundColor: '#2c3a30' },
-        bordered && { borderWidth: 1, borderColor: '#CCCDCE' },
+        bordered && { borderWidth: border, borderColor: '#CCCDCE' },
       ]}
     >
-      <SatelliteMap
-        // Read-only maps are rebuilt when the outlines change (e.g. edited from Settings).
-        key={editable ? 'editable' : JSON.stringify(outlines)}
-        center={center}
-        zoom={zoom}
-        interactive={interactive}
-        cornerRadius={bordered ? cornerRadius - 1 : cornerRadius}
-        outlines={outlines}
-        editable={editable}
-        toolPress={toolPress}
-        onEvent={onEvent}
-        showPin={showPin}
-        refreshToken={refreshToken}
-      />
+      {!interactive && !editable ? (
+        // Maps you only look at are drawn natively from cached tiles: they can't go blank
+        // while their tab is hidden or when switching tabs quickly.
+        <StaticSatellite
+          width={rect.width - 2 * border}
+          height={rect.height - 2 * border}
+          center={center}
+          zoom={zoom}
+          outlines={outlines}
+          fitPadding={fitPadding === undefined ? undefined : fitPadding * scale}
+          labels={labels}
+          labelSize={9 * scale}
+        />
+      ) : (
+        <SatelliteMap
+          // Rebuilt when the outlines change from outside (e.g. edited from Settings).
+          key={editable ? 'editable' : JSON.stringify(outlines)}
+          center={center}
+          zoom={zoom}
+          interactive={interactive}
+          cornerRadius={bordered ? cornerRadius - border : cornerRadius}
+          outlines={outlines}
+          editable={editable}
+          toolPress={toolPress}
+          onEvent={onEvent}
+          showPin={showPin}
+          flyIn={flyIn}
+        />
+      )}
     </View>
   );
 }

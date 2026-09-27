@@ -9,8 +9,6 @@ export type ToolPress = { tool: MapTool; id: number };
 
 export type SatelliteMapProps = SatelliteOptions & {
   toolPress?: ToolPress | null;
-  /** Changing this asks the page to re-check its size and reload tiles (e.g. on tab focus). */
-  refreshToken?: number;
   onEvent?: (event: MapEvent) => void;
 };
 
@@ -22,7 +20,7 @@ const sameSpot = (a: LatLng | null, b: LatLng | null) =>
  * `send` delivers a command to the loaded page and must be stable.
  */
 export function useSatellitePage(props: SatelliteMapProps, send: (command: MapCommand) => void) {
-  const { center, zoom, toolPress, refreshToken } = props;
+  const { center, zoom, toolPress } = props;
   const [html] = useState(() => buildSatelliteHtml(props));
   const [loaded, setLoaded] = useState(false);
   // The spot the page is showing (or flying to).
@@ -44,10 +42,6 @@ export function useSatellitePage(props: SatelliteMapProps, send: (command: MapCo
     lastTool.current = toolPress.id;
     send({ type: 'tool', tool: toolPress.tool });
   }, [loaded, toolPress, send]);
-
-  useEffect(() => {
-    if (loaded && refreshToken) send({ type: 'refresh' });
-  }, [loaded, refreshToken, send]);
 
   const onLoad = useCallback(() => setLoaded(true), []);
   return { html, onLoad };

@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
 
 import { useAppState } from '@/lib/app-state';
-import { formatSquareFeet, totalSquareFeet } from '@/lib/area';
+import { totalSquareFeet } from '@/lib/area';
+import { formatAreaNumber } from '@/lib/units';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
@@ -15,7 +16,7 @@ const SHIFT = { header: 8, label: 16, box: 22, map: 36 };
 
 // Lawnalyze UI (3).zip
 export default function FootageScreen() {
-  const { lawn, outlines, completeOnboarding } = useAppState();
+  const { lawn, outlines, preferences, completeOnboarding } = useAppState();
   const squareFeet = totalSquareFeet(outlines);
 
   function confirm() {
@@ -43,7 +44,7 @@ export default function FootageScreen() {
       <Layer asset={footage.boxFootage} x={25} y={120 + SHIFT.box} />
       {squareFeet > 0 && (
         <DesignText x={25} y={120 + SHIFT.box} w={292} h={89} size={28} align="center">
-          {formatSquareFeet(squareFeet)} Square Feet
+          {`${formatAreaNumber(squareFeet, preferences.units)} ${preferences.units === 'metric' ? 'Square Meters' : 'Square Feet'}`}
         </DesignText>
       )}
       <SatelliteSlot x={24} y={225 + SHIFT.map} w={292} h={292} radius={44} center={lawn} zoom={19} outlines={outlines} />

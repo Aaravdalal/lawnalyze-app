@@ -14,9 +14,8 @@
     "android": {
       "package": "com.lawnalyze.app",
       "adaptiveIcon": {
-        "backgroundColor": "#9EF9B4",
+        "backgroundColor": "#A6F4B8",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false
@@ -41,7 +40,15 @@
         {
           "locationWhenInUsePermission": "Lawnalyze uses your location to show satellite imagery of your lawn."
         }
-      ]
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/android-icon-monochrome.png",
+          "color": "#2F9E57"
+        }
+      ],
+      "expo-image"
     ]
   }
 }

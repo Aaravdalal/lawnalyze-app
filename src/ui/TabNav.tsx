@@ -1,11 +1,11 @@
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { TAB_CHIN_DROP, useFrameMetrics } from './Artboard';
+import { GREEN, TAB_CHIN_DROP, useFrameMetrics } from './Artboard';
 import { ui } from './assets';
-import { gooeyPath } from './gooey';
+import { CARD_BOTTOM_H, chinPath } from './chin';
 
 // Geometry of the Figma nav bar exports (design pts, relative to the bar's left edge):
 // each tab's pill cell, 26pt tall. The active tab gets its own pill; the tabs before and
@@ -20,39 +20,31 @@ const BAR = { x: 18, w: 303, h: 26 };
 const DOT = { gap: 4, size: ui.common.navDot.w };
 const GROUP_H = BAR.h + DOT.gap + DOT.size; // pills + dot, centered in the green chin
 const CARD_BOTTOM = 568;
-/** Pills closer than this (design pts) grow a liquid bridge; the resting gaps are ~14. */
-const BRIDGE_REACH = 10;
 /** A touch on the bar held longer than this before lifting counts as press-and-drag. */
 const HOLD_MS = 300;
-
-type Edges = { activeLeft: number; activeRight: number; beforeRight: number; afterLeft: number };
-type EdgeKey = keyof Edges;
-const EDGE_KEYS: EdgeKey[] = ['activeLeft', 'activeRight', 'beforeRight', 'afterLeft'];
-
-/** Pill edges for a given active tab. An empty side group collapses to zero width at its end. */
-function layoutFor(index: number): Edges {
-  const [activeLeft, activeRight] = TABS[index].cell;
-  return {
-    activeLeft,
-    activeRight,
-    beforeRight: index > 0 ? TABS[index - 1].cell[1] : 0,
-    afterLeft: index < TABS.length - 1 ? TABS[index + 1].cell[0] : BAR.w,
-  };
-}
-
-type Spring = { stiffness: number; damping: number };
-// Critically damped springs (damping = 2 * sqrt(stiffness)): smooth, no bounce or overshoot.
-// The leading edge is stiffer than the trailing one, so the pill still stretches as it moves.
-const critical = (stiffness: number): Spring => ({ stiffness, damping: 2 * Math.sqrt(stiffness) });
-const FAST = critical(150);
-const SLOW = critical(60);
-const MEDIUM = critical(95);
+/** How long the pill takes to slide to the tapped tab. */
+const SLIDE_MS = 260;
 
 /**
- * The Home / Usage / Rebates / Settings bar with a liquid morph: when switching tabs the
- * active pill's leading edge springs ahead of its trailing edge, so it stretches toward the
- * new tab; the neighbouring pills flow to their new edges; and pills that come close grow a
- * waisted liquid bridge (see gooey.ts) so they melt together and pull apart.
+ * Where the pills sit for a given active tab: the active tab's pill, and the right end of the
+ * pill before it / left end of the pill after it. On Home (or Settings) the empty side pill
+ * rests under the active pill, so it slides out from underneath when the active pill leaves.
+ */
+function layoutFor(index: number) {
+  const [activeLeft, activeRight] = TABS[index].cell;
+  const last = TABS.length - 1;
+  return {
+    activeLeft,
+    beforeRight: index > 0 ? TABS[index - 1].cell[1] : activeRight,
+    afterLeft: index < last ? TABS[index + 1].cell[0] : activeLeft,
+  };
+}
+const LAYOUTS = TABS.map((_, i) => layoutFor(i));
+const PILL_W = TABS[0].cell[1] - TABS[0].cell[0]; // every tab's cell is the same width
+
+/**
+ * The Home / Usage / Rebates / Settings bar. Tapping a tab slides the white pill over to it
+ * (and the pills beside it follow), along with the dot underneath.
  */
 export function TabNav({ state, navigation }: BottomTabBarProps) {
   const frame = useFrameMetrics(TAB_CHIN_DROP);
@@ -60,12 +52,9 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
   const index = state.index;
   const [drawnHeight, setDrawnHeight] = useState<number | null>(null);
 
-  // Spring simulation for the four pill edges (design pts); `edges` is what's drawn.
-  const [edges, setEdges] = useState<Edges>(() => layoutFor(index));
-  const position = useRef<Edges>(layoutFor(index));
-  const velocity = useRef<Edges>({ activeLeft: 0, activeRight: 0, beforeRight: 0, afterLeft: 0 });
-  const previous = useRef(index);
-  const [dot] = useState(() => new Animated.Value(index));
+  // The bar's position as a tab index (fractional mid-slide). Runs on the native driver, so
+  // the pill keeps sliding smoothly even while the new screen is busy mounting.
+  const [position] = useState(() => new Animated.Value(index));
 
   // Swipes on the bar change tabs: a quick flick right/left moves one tab forward/back;
   // pressing and dragging goes to whichever tab the finger lifts over. Uses plain touch
@@ -104,89 +93,36 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
   };
 
   useEffect(() => {
-    const from = previous.current;
-    previous.current = index;
-    if (from === index) return;
-
-    const target = layoutFor(index);
-    const movingRight = index > from;
-    // Leading edge leads, trailing edge lags: the pill stretches in the direction of travel.
-    const feel: Record<EdgeKey, Spring> = {
-      activeRight: movingRight ? FAST : SLOW,
-      activeLeft: movingRight ? SLOW : FAST,
-      beforeRight: MEDIUM,
-      afterLeft: MEDIUM,
-    };
-    Animated.spring(dot, { toValue: index, useNativeDriver: true, speed: 6, bounciness: 0 }).start();
-
-    let frameId = 0;
-    let last: number | null = null;
-    const step = (now: number) => {
-      const dt = last === null ? 1 / 60 : Math.min(1 / 30, (now - last) / 1000);
-      last = now;
-      let moving = false;
-      const pos = { ...position.current };
-      const vel = { ...velocity.current };
-      for (const key of EDGE_KEYS) {
-        const { stiffness, damping } = feel[key];
-        const acceleration = -stiffness * (pos[key] - target[key]) - damping * vel[key];
-        vel[key] += acceleration * dt;
-        pos[key] += vel[key] * dt;
-        if (Math.abs(pos[key] - target[key]) < 0.05 && Math.abs(vel[key]) < 0.05) {
-          pos[key] = target[key];
-          vel[key] = 0;
-        } else {
-          moving = true;
-        }
-      }
-      // Keep every pill edge inside the bar: nothing may pass Home's left end or Settings' right end.
-      for (const key of EDGE_KEYS) {
-        if (pos[key] < 0 || pos[key] > BAR.w) {
-          pos[key] = Math.min(BAR.w, Math.max(0, pos[key]));
-          vel[key] = 0;
-        }
-      }
-      if (pos.activeLeft > pos.activeRight) pos.activeLeft = pos.activeRight;
-      position.current = pos;
-      velocity.current = vel;
-      setEdges(pos);
-      if (moving) frameId = requestAnimationFrame(step);
-    };
-    frameId = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frameId);
-  }, [index, dot]);
+    // Starts from wherever the pill is now, so quick taps just redirect it.
+    Animated.timing(position, {
+      toValue: index,
+      duration: SLIDE_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [index, position]);
 
   const pillH = BAR.h * s;
-  const path = useMemo(() => {
-    // A side group that is emptying (moving to Home or to Settings) keeps full pill height
-    // until the active pill has covered it, so it's absorbed at the bar's end instead of
-    // shrinking into a little dot that pokes out past the active pill's curve.
-    let beforeRight = edges.beforeRight;
-    if (index === 0 && beforeRight > 0.01) beforeRight = Math.max(beforeRight, BAR.h);
-    let afterLeft = edges.afterLeft;
-    if (index === TABS.length - 1 && afterLeft < BAR.w - 0.01) afterLeft = Math.min(afterLeft, BAR.w - BAR.h);
-    return gooeyPath(
-      [
-        { left: 0, right: beforeRight * s },
-        { left: edges.activeLeft * s, right: edges.activeRight * s },
-        { left: afterLeft * s, right: BAR.w * s },
-      ],
-      pillH,
-      BRIDGE_REACH * s,
-    );
-  }, [edges, index, s, pillH]);
-  const dotX = useMemo(
-    () =>
-      dot.interpolate({
-        inputRange: TABS.map((_, i) => i),
-        outputRange: TABS.map((tab) => ((tab.cell[0] + tab.cell[1]) / 2 - DOT.size / 2) * s),
-      }),
-    [dot, s],
-  );
+  const slide = useMemo(() => {
+    const along = (x: (i: number) => number) =>
+      position.interpolate({ inputRange: TABS.map((_, i) => i), outputRange: TABS.map((_, i) => x(i) * s) });
+    return {
+      active: along((i) => LAYOUTS[i].activeLeft),
+      // Side pills are full-bar-wide pills clipped by the bar's rounded ends (see below).
+      before: along((i) => LAYOUTS[i].beforeRight - BAR.w),
+      after: along((i) => LAYOUTS[i].afterLeft),
+      dot: along((i) => (TABS[i].cell[0] + TABS[i].cell[1]) / 2 - DOT.size / 2),
+    };
+  }, [position, s]);
 
   // Center the pills + dot in the green area between the card and the bottom of the screen.
+  const bottom = drawnHeight ?? frame.height;
   const chinTop = frame.top(CARD_BOTTOM, 'footer');
-  const top = ((drawnHeight ?? frame.height) + chinTop) / 2 - (GROUP_H * s) / 2;
+  const top = (bottom + chinTop) / 2 - (GROUP_H * s) / 2;
+  // The green chin below the card is drawn here, once for all tabs (the tab screens don't
+  // draw their own), so it stays perfectly still while switching tabs.
+  const cardTop = frame.top(CARD_BOTTOM - CARD_BOTTOM_H, 'footer');
+  const chin = useMemo(() => chinPath(frame.width, 0, s, bottom - cardTop + 2), [frame.width, s, bottom, cardTop]);
 
   return (
     <View
@@ -194,14 +130,23 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
       style={StyleSheet.absoluteFill}
       onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
     >
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: cardTop, bottom: -2 }}>
+        <Svg width={frame.width} height={bottom - cardTop + 2}>
+          <Path d={chin} fill={GREEN} />
+        </Svg>
+      </View>
+
       <View
         pointerEvents="none"
         style={{ position: 'absolute', left: frame.left(BAR.x), top, width: BAR.w * s, height: GROUP_H * s }}
       >
-        {/* Exactly the bar's width: the morph can never draw outside Home's and Settings' ends. */}
-        <Svg width={BAR.w * s} height={pillH} style={{ position: 'absolute', left: 0, top: 0 }}>
-          <Path d={path} fill="#fff" />
-        </Svg>
+        {/* Clipped to the bar's rounded ends: the side pills are the bar's own width, slid so
+            that only their visible end moves, and nothing can show outside Home or Settings. */}
+        <View style={[styles.track, { width: BAR.w * s, height: pillH, borderRadius: pillH / 2 }]}>
+          <Animated.View style={[styles.pill, { width: BAR.w * s, borderRadius: pillH / 2, transform: [{ translateX: slide.before }] }]} />
+          <Animated.View style={[styles.pill, { width: BAR.w * s, borderRadius: pillH / 2, transform: [{ translateX: slide.after }] }]} />
+          <Animated.View style={[styles.pill, { width: PILL_W * s, borderRadius: pillH / 2, transform: [{ translateX: slide.active }] }]} />
+        </View>
 
         {TABS.map((tab) => (
           <Text
@@ -232,7 +177,7 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
             top: (BAR.h + DOT.gap) * s,
             width: DOT.size * s,
             height: DOT.size * s,
-            transform: [{ translateX: dotX }],
+            transform: [{ translateX: slide.dot }],
           }}
         />
       </View>
@@ -269,6 +214,8 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
 }
 
 const styles = StyleSheet.create({
+  track: { position: 'absolute', left: 0, top: 0, overflow: 'hidden' },
+  pill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: '#fff' },
   label: {
     position: 'absolute',
     top: 0,

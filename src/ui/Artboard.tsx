@@ -17,7 +17,9 @@ export const GREEN = '#9EF9B4';
 /** Intro screen tweaks: its Get Started button is a bit larger than in Figma... */
 export const BUTTON_GROW = 1.15;
 /** ...and its card/footer sit lower for a shorter green chin (design pts). */
-const FOOTER_DROP = 40;
+// 568 + TAB_CHIN_DROP === 548 + FOOTER_DROP: onboarding and tab screens put the card edge in the
+// same place, so the green chin stays still when onboarding fades into the tabs.
+const FOOTER_DROP = 44;
 /** Tab screens: a smaller drop, since the nav bar and its dot need room in the chin. */
 export const TAB_CHIN_DROP = 24;
 
@@ -76,8 +78,12 @@ export type Glow = { asset: UiAsset; x: number; y: number };
 type ArtboardProps = {
   /** Design y where the white card's rounded bottom edge ends. */
   cardBottom: number;
-  /** Green footer layer that sits behind the card's rounded corners. */
-  footer: UiAsset;
+  /**
+   * Green footer layer that sits behind the card's rounded corners. Tab screens leave it
+   * out: the tab bar draws one shared chin for all of them (see TabNav), so it stays put
+   * when switching tabs.
+   */
+  footer?: UiAsset;
   glows: Glow[];
   /** Design y of the green-to-white gradient used on the intro screens. */
   gradientY?: number;
@@ -94,22 +100,29 @@ export function Artboard({ cardBottom, footer, glows, gradientY, compactChin = f
   const bottom = drawnHeight ?? height;
   const frame: Frame = { ...metrics, chinCenter: (metrics.top(cardBottom, 'footer') + bottom) / 2 };
   const card = ui.common.cardBottom;
-  const footerTop = frame.top(DESIGN_HEIGHT - footer.h, 'footer');
 
   return (
     <FrameContext.Provider value={frame}>
-      <View style={styles.root} onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}>
-        <Image source={ui.common.baseWhite.source} resizeMode="stretch" style={[styles.abs, { left: 0, top: 0, width, height }]} />
-        <Image
-          source={footer.source}
-          resizeMode="stretch"
-          style={[styles.abs, { left: 0, top: footerTop, width, height: height - footerTop }]}
-        />
-        <Image
-          source={card.source}
-          resizeMode="stretch"
-          style={[styles.abs, { left: 0, top: frame.top(cardBottom - card.h, 'footer'), width, height: card.h * scale }]}
-        />
+      <View
+        style={[styles.root, !footer && styles.white]}
+        onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
+      >
+        {footer && (
+          <>
+            {/* The Figma base layer is plain white. */}
+            <View style={[styles.abs, styles.white, { left: 0, top: 0, width, height }]} />
+            <Image
+              source={footer.source}
+              resizeMode="stretch"
+              style={[styles.abs, { left: 0, top: frame.top(DESIGN_HEIGHT - footer.h, 'footer'), width, bottom: 0 }]}
+            />
+            <Image
+              source={card.source}
+              resizeMode="stretch"
+              style={[styles.abs, { left: 0, top: frame.top(cardBottom - card.h, 'footer'), width, height: card.h * scale }]}
+            />
+          </>
+        )}
         {gradientY !== undefined && (
           // Stretched up to the top of the screen so it also fills the status bar area.
           <Image
@@ -143,12 +156,30 @@ export function useRect({ x, y, anchor }: Rect, w: number, h: number): Placement
   };
 }
 
-type LayerProps = Rect & { asset: UiAsset };
+type LayerProps = Rect & {
+  asset: UiAsset;
+  /** Mirror top-to-bottom (e.g. a row export whose rounder corners belong at the bottom). */
+  flip?: boolean;
+  /** Paint the whole layer this color, keeping its shape. */
+  tint?: string;
+};
 
-/** A Figma layer placed at its design position. */
-export function Layer({ asset, x, y, anchor }: LayerProps) {
+/**
+ * A Figma layer placed at its design position. Layers are pictures only: touches pass
+ * through them to any button underneath (e.g. a row's text label drawn over the row).
+ */
+export function Layer({ asset, x, y, anchor, flip, tint }: LayerProps) {
   const rect = useRect({ x, y, anchor }, asset.w, asset.h);
-  return <Image source={asset.source} resizeMode="stretch" style={rect} />;
+  return (
+    <View style={[rect, styles.noTouch, flip && styles.flip]}>
+      <Image
+        source={asset.source}
+        resizeMode="stretch"
+        tintColor={tint}
+        style={{ width: rect.width, height: rect.height }}
+      />
+    </View>
+  );
 }
 
 type PressableLayerProps = LayerProps & {
@@ -209,5 +240,8 @@ export function Hotspot({ x, y, anchor, w, h, onPress, label }: HotspotProps) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, overflow: 'hidden', backgroundColor: GREEN },
+  white: { backgroundColor: '#fff' },
+  noTouch: { pointerEvents: 'none' },
+  flip: { transform: [{ scaleY: -1 }] },
   abs: { position: 'absolute' },
 });

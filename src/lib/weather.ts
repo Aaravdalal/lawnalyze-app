@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
 import type { LatLng } from './location';
@@ -42,7 +43,7 @@ type ForecastResponse = {
 };
 
 /** WMO weather code -> condition name and icon (https://open-meteo.com/en/docs). */
-function describe(code: number, isDay: boolean): { condition: string; icon: WeatherIconKind } {
+export function describe(code: number, isDay: boolean): { condition: string; icon: WeatherIconKind } {
   if (code === 0) return { condition: 'Clear', icon: isDay ? 'clear-day' : 'clear-night' };
   if (code === 1 || code === 2) return { condition: 'Partly Cloudy', icon: isDay ? 'partly-day' : 'partly-night' };
   if (code === 3) return { condition: 'Cloudy', icon: 'cloudy' };
@@ -95,7 +96,7 @@ function toWeather(data: ForecastResponse): Weather {
     return {
       time,
       label: hourLabel(time),
-      temperature: Math.round(data.hourly.temperature_2m[at]),
+      temperature: data.hourly.temperature_2m[at],
       icon: describe(data.hourly.weather_code[at], data.hourly.is_day[at] === 1).icon,
     };
   });
@@ -115,12 +116,12 @@ function toWeather(data: ForecastResponse): Weather {
       time: event.time,
       label: clockLabel(event.time),
       icon: event.icon,
-      temperature: nearest?.temperature ?? Math.round(data.current.temperature_2m),
+      temperature: nearest?.temperature ?? data.current.temperature_2m,
     });
   }
 
   return {
-    temperature: Math.round(data.current.temperature_2m),
+    temperature: data.current.temperature_2m,
     condition: now.condition,
     icon: now.icon,
     sky: skyFor(data),
@@ -144,30 +145,85 @@ async function fetchWeather({ latitude, longitude }: LatLng): Promise<Weather> {
   return toWeather((await response.json()) as ForecastResponse);
 }
 
+// ---------- caching: show a forecast instantly, refresh in the background ----------
+
+/** A saved forecast younger than this is shown right away while a fresh one loads. */
+const MAX_CACHED_AGE_MS = 3 * 60 * 60_000;
+const STORAGE_PREFIX = 'lawnalyze/weather/';
+
+type Cached = { at: number; weather: Weather };
+const memory = new Map<string, Cached>();
+const inFlight = new Map<string, Promise<Weather>>();
+
+const keyFor = ({ latitude, longitude }: LatLng) => `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+const fresh = (cached: Cached | undefined, maxAge: number) => !!cached && Date.now() - cached.at < maxAge;
+
+/** One shared request per place; the result is remembered in memory and on the phone. */
+function loadWeather(spot: LatLng): Promise<Weather> {
+  const key = keyFor(spot);
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+  const request = fetchWeather(spot)
+    .then((weather) => {
+      const cached = { at: Date.now(), weather };
+      memory.set(key, cached);
+      AsyncStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(cached)).catch(() => {});
+      return weather;
+    })
+    .finally(() => inFlight.delete(key));
+  inFlight.set(key, request);
+  return request;
+}
+
+/** Start loading the forecast early (e.g. at launch), so Home can show it immediately. */
+export function prefetchWeather(spot: LatLng | null) {
+  if (!spot || fresh(memory.get(keyFor(spot)), REFRESH_MS)) return;
+  loadWeather(spot).catch(() => {});
+}
+
 /** Current weather + next hours at a location, refreshed every 30 minutes. */
 export function useWeather(spot: LatLng | null): Weather | null {
-  const [weather, setWeather] = useState<Weather | null>(null);
   const latitude = spot?.latitude;
   const longitude = spot?.longitude;
+  const key = latitude === undefined || longitude === undefined ? null : keyFor({ latitude, longitude });
+  // Whatever is already in memory shows on the very first frame.
+  const [shown, setShown] = useState<{ key: string; weather: Weather } | null>(() => {
+    const cached = key ? memory.get(key) : undefined;
+    return key && cached ? { key, weather: cached.weather } : null;
+  });
 
   useEffect(() => {
-    if (latitude === undefined || longitude === undefined) return;
+    if (key === null || latitude === undefined || longitude === undefined) return;
     let active = true;
-    const load = () =>
-      fetchWeather({ latitude, longitude })
-        .then((next) => {
-          if (active) setWeather(next);
+    const show = (weather: Weather) => {
+      if (active) setShown({ key, weather });
+    };
+
+    const inMemory = memory.get(key);
+    if (inMemory) show(inMemory.weather);
+    else {
+      // Cold start: the forecast saved last time appears while the new one loads.
+      AsyncStorage.getItem(STORAGE_PREFIX + key)
+        .then((raw) => {
+          const saved = raw ? (JSON.parse(raw) as Cached) : undefined;
+          if (saved && fresh(saved, MAX_CACHED_AGE_MS) && !memory.has(key)) show(saved.weather);
         })
+        .catch(() => {});
+    }
+
+    const load = () =>
+      loadWeather({ latitude, longitude })
+        .then(show)
         .catch(() => {
           // Keep showing the last forecast; the next refresh will try again.
         });
-    load();
+    if (!fresh(inMemory, REFRESH_MS)) load();
     const timer = setInterval(load, REFRESH_MS);
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [latitude, longitude]);
+  }, [key, latitude, longitude]);
 
-  return weather;
+  return shown && shown.key === key ? shown.weather : null;
 }

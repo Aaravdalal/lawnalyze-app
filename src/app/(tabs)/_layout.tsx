@@ -7,8 +7,7 @@ export default function TabsLayout() {
   return (
     <Tabs
       tabBar={(props) => <TabNav {...props} />}
-      // Keep every tab mounted and attached: re-attaching the map WebViews on Home/Settings
-      // flashed white rectangles and stuttered the tab bar morph.
+      // Keep every tab mounted and attached, so switching tabs is instant and nothing reloads.
       detachInactiveScreens={false}
       screenOptions={{ headerShown: false, animation: 'none', lazy: false, freezeOnBlur: false }}
     >

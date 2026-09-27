@@ -28,8 +28,10 @@ export type SatelliteOptions = {
   outlines: Outline[];
   /** Lets the user draw and reshape outlines (the Mark your Lawn screen). */
   editable: boolean;
-  /** Blue pin on the house (used while locating/marking; hidden once the lawn is confirmed). */
+  /** Blue pin on the house (only while locating; hidden once the lawn is found). */
   showPin: boolean;
+  /** Start zoomed out and fly in to `center` (the Locate screen); otherwise open right on it. */
+  flyIn: boolean;
 };
 
 export type MapTool = 'draw' | 'add' | 'delete';
@@ -57,9 +59,10 @@ export function buildSatelliteHtml({
   outlines,
   editable,
   showPin,
+  flyIn,
 }: SatelliteOptions): string {
-  // With a known location, start zoomed out over it and fly in once the page loads.
-  const start = center ? { ...center, zoom: Math.max(zoom - 6, 3) } : US_OVERVIEW;
+  // With a known location, open on it (or start zoomed out over it and fly in once loaded).
+  const start = center ? { ...center, zoom: flyIn ? Math.max(zoom - 6, 3) : zoom } : US_OVERVIEW;
   const i = interactive ? 'true' : 'false';
   // Keep the attribution clear of the rounded corner.
   const inset = Math.round(cornerRadius * 0.45);
@@ -131,7 +134,7 @@ export function buildSatelliteHtml({
     var tile = e.tile, tries = (tile._retries || 0) + 1;
     if (tries > 4) return;
     tile._retries = tries;
-    var src = tile.src.replace(/&retry=d+$/, '');
+    var src = tile.src.replace(/&retry=\\w+$/, '');
     setTimeout(function () { tile.src = src + '&retry=' + tries; }, 600 * tries);
   });
   // Never while flying in (that would knock the view off-centre); catch up once it lands.
@@ -142,6 +145,16 @@ export function buildSatelliteHtml({
     if (!el.clientWidth || !el.clientHeight) return; // hidden: wait until shown
     map.invalidateSize({ animate: false }); // keeps the same centre
     map.fire('moveend'); // makes the tile layer load anything missing for the current view
+    // Tiles that broke while the map was hidden (e.g. requests dropped during a quick tab
+    // switch): load them again.
+    Object.keys(tiles._tiles).forEach(function (key) {
+      var img = tiles._tiles[key].el;
+      if (img.complete && !img.naturalWidth) {
+        img._retries = 0;
+        img.src = img.src.replace(/&retry=\\w+$/, '') + '&retry=r' + Date.now();
+      }
+    });
+    if (outlineRenderer._map) outlineRenderer._reset(); // redraw the lawn outline at the new size
     el.style.transform = 'translateZ(0)'; // nudge Android WebViews to repaint
     requestAnimationFrame(function () { el.style.transform = ''; });
   }
@@ -151,6 +164,17 @@ export function buildSatelliteHtml({
     if (size !== lastSize) { lastSize = size; refresh(); }
   }).observe(map.getContainer());
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+  // Safety net: every few seconds, repair a view that has broken or missing tiles.
+  setInterval(function () {
+    var el = map.getContainer();
+    if (flying || document.hidden || !el.clientWidth || !el.clientHeight) return;
+    var keys = Object.keys(tiles._tiles);
+    var broken = !keys.length || keys.some(function (key) {
+      var img = tiles._tiles[key].el;
+      return img.complete && !img.naturalWidth;
+    });
+    if (broken) refresh();
+  }, 2500);
 
   map.setView([${num(start.latitude)}, ${num(start.longitude)}], ${num(start.zoom)});
   updateHandleVisibility();
@@ -167,10 +191,12 @@ export function buildSatelliteHtml({
   });
   var marker = null;
   var SHOW_PIN = ${showPin ? 'true' : 'false'};
+  function placePin(lat, lng) {
+    if (!SHOW_PIN) return;
+    if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pin, interactive: false }).addTo(map);
+  }
   function flyTo(lat, lng, zoom) {
-    if (SHOW_PIN) {
-      if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pin, interactive: false }).addTo(map);
-    }
+    placePin(lat, lng);
     flying = true;
     map.once('moveend', function () {
       flying = false;
@@ -280,7 +306,13 @@ export function buildSatelliteHtml({
   }
   window.lawnalyzeCommand = command;
   window.addEventListener('message', function (event) { command(event.data); });
-  ${center ? `setTimeout(function () { flyTo(${num(center.latitude)}, ${num(center.longitude)}, ${num(zoom)}); }, 350);` : ''}
+  ${
+    !center
+      ? ''
+      : flyIn
+        ? `setTimeout(function () { flyTo(${num(center.latitude)}, ${num(center.longitude)}, ${num(zoom)}); }, 350);`
+        : `placePin(${num(center.latitude)}, ${num(center.longitude)});`
+  }
 })();
 </script>
 </body>

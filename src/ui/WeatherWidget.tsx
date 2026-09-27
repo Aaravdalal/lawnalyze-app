@@ -1,12 +1,14 @@
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
+import type { Units } from '@/lib/app-state';
+import { temperature } from '@/lib/units';
 import type { Sky, Weather } from '@/lib/weather';
 
 import { useFrame, useRect } from './Artboard';
 import { WeatherIcon } from './WeatherIcon';
 
-type Props = { x: number; y: number; w: number; h: number; weather: Weather | null };
+type Props = { x: number; y: number; w: number; h: number; weather: Weather | null; units: Units };
 
 // Layout inside the Figma weather box (design pts): current conditions on the left,
 // the next hours on the right, like the iPhone weather widget.
@@ -25,7 +27,7 @@ const SKIES: Record<Sky, [string, string, string]> = {
 
 /** Live weather in the "Weather in <city>" box, on an Apple-style sky gradient that follows
  * the conditions: day, sunset/sunrise, night or rain. */
-export function WeatherWidget({ x, y, w, h, weather }: Props) {
+export function WeatherWidget({ x, y, w, h, weather, units }: Props) {
   const rect = useRect({ x, y }, w, h);
   const { scale: s } = useFrame();
   const stops = SKIES[weather?.sky ?? 'day'];
@@ -42,19 +44,19 @@ export function WeatherWidget({ x, y, w, h, weather }: Props) {
         </Defs>
         <Rect x={0} y={0} width={rect.width} height={rect.height} rx={RADIUS * s} ry={RADIUS * s} fill="url(#sky)" />
       </Svg>
-      {weather && <Forecast weather={weather} width={w} height={h} />}
+      {weather && <Forecast weather={weather} width={w} height={h} units={units} />}
     </View>
   );
 }
 
-function Forecast({ weather, width, height }: { weather: Weather; width: number; height: number }) {
+function Forecast({ weather, width, height, units }: { weather: Weather; width: number; height: number; units: Units }) {
   const { scale: s } = useFrame();
   const columnW = (width - NOW_W - PAD) / weather.hourly.length;
   return (
     <View style={[styles.row, { width: width * s, height: height * s }]}>
       <View style={{ width: NOW_W * s, paddingLeft: 14 * s, justifyContent: 'center' }}>
         <Text style={[styles.light, { fontSize: 32 * s, lineHeight: 36 * s }]} maxFontSizeMultiplier={1.1}>
-          {weather.temperature}°
+          {temperature(weather.temperature, units)}°
         </Text>
         <Text numberOfLines={1} style={[styles.regular, styles.muted, { fontSize: 10 * s }]} maxFontSizeMultiplier={1.1}>
           {weather.condition}
@@ -68,7 +70,7 @@ function Forecast({ weather, width, height }: { weather: Weather; width: number;
           </Text>
           <WeatherIcon kind={slot.icon} size={22 * s} />
           <Text style={[styles.medium, { fontSize: 11.5 * s }]} maxFontSizeMultiplier={1.1}>
-            {slot.temperature}°
+            {temperature(slot.temperature, units)}°
           </Text>
         </View>
       ))}

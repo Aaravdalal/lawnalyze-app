@@ -13,20 +13,43 @@ type Props = {
   size: number;
   align?: 'left' | 'center';
   weight?: 'regular' | 'medium';
+  color?: string;
   children: ReactNode;
 };
 
-/** Live text (in the Figma font) placed in a design-space box, vertically centered. */
-export function DesignText({ x, y, w, h, anchor, size, align = 'left', weight = 'regular', children }: Props) {
+// Approximate Google Sans Flex advance widths (in ems), to shrink long values to fit their box.
+function textWidthEm(text: string): number {
+  let em = 0;
+  for (const ch of text) {
+    if (/[0-9$]/.test(ch)) em += 0.57;
+    else if (/[.,:;' ]/.test(ch)) em += 0.26;
+    else if (ch === '%') em += 0.86;
+    else if (/[il|]/.test(ch)) em += 0.23;
+    else if (/[mwMW]/.test(ch)) em += 0.8;
+    else if (/[A-Z]/.test(ch)) em += 0.64;
+    else em += 0.52;
+  }
+  return em;
+}
+
+/** Largest font size (up to `size`) at which one line of `text` fits in `width`. */
+export const fitFontSize = (text: string, size: number, width: number) =>
+  Math.min(size, (width * 0.98) / Math.max(0.1, textWidthEm(text)));
+
+/** Live text (in the Figma font) placed in a design-space box, vertically centered. Plain
+ * string content shrinks as needed to fit the box's width (so large numbers never clip). */
+export function DesignText({ x, y, w, h, anchor, size, align = 'left', weight = 'regular', color, children }: Props) {
   const rect = useRect({ x, y, anchor }, w, h);
   const { scale } = useFrame();
+  const text = Array.isArray(children) ? children.join('') : typeof children === 'string' || typeof children === 'number' ? String(children) : null;
+  const fontSize = text ? fitFontSize(text, size, w) : size;
   return (
     <View pointerEvents="none" style={[rect, styles.box, { alignItems: align === 'center' ? 'center' : 'flex-start' }]}>
       <Text
         numberOfLines={1}
         adjustsFontSizeToFit
         maxFontSizeMultiplier={1.2}
-        style={[styles.text, weight === 'medium' && styles.medium, { fontSize: size * scale }]}
+        style={[styles.text, weight === 'medium' && styles.medium, { fontSize: fontSize * scale }, color ? { color } : null]}
       >
         {children}
       </Text>
