@@ -13,10 +13,19 @@ const { common, usage } = ui;
 // The "Great" in the Figma export is this green; the other ratings shade toward red.
 const RATING_COLORS: Record<Rating, string> = {
   Great: '#9EF9B4',
-  Good: '#6FD68C',
   Fair: '#F2B33D',
-  High: '#EF6B6B',
+  Bad: '#EF6B6B',
 };
+
+/**
+ * How full the drop is: half full at the national average, emptier below it, and filling
+ * toward the top (never quite full) the further above it the lawn is.
+ */
+function dropLevel(percentOfNational: number): number {
+  const ratio = percentOfNational / 100;
+  const level = ratio <= 1 ? ratio / 2 : 1 - 0.5 / ratio;
+  return Math.min(0.94, Math.max(0.06, level));
+}
 
 // Lawnalyze UI (5)/(18). Estimated water use and cost for the marked lawn, weather-adjusted
 // (see lib/estimate.ts). Boxes stay empty until a lawn area is marked and the data loads.
@@ -75,8 +84,7 @@ export default function UsageScreen() {
       <Layer asset={usage.titleComparison} x={17} y={236} />
       <Layer asset={usage.boxDrop} x={24} y={264} />
       {estimate ? (
-        // Half full = the national average; fuller means more water than average.
-        <WaterDrop x={38} y={274} size={132} level={Math.min(0.94, Math.max(0.06, estimate.percentOfNational / 200))} />
+        <WaterDrop x={38} y={274} size={132} level={dropLevel(estimate.percentOfNational)} />
       ) : (
         <Layer asset={usage.waterDrop} x={38} y={274} />
       )}

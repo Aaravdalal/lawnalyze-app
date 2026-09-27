@@ -47,11 +47,14 @@ export const MM_PER_INCH = 25.4;
  */
 const PRICE_PER_GALLON = 7.74 / 1000;
 /**
- * National average household outdoor water use: "The average American family uses more than
- * 300 gallons of water per day at home", and "outdoor water use accounts for 30 percent"
- * (epa.gov/watersense/how-we-use-water) → 90 gallons a day.
+ * National average water per square foot of lawn, per year (≈ 4.0 gal/sq ft, 163 L/m²):
+ * - the average household's outdoor water: "The average American family uses more than 300
+ *   gallons of water per day at home", and "outdoor water use accounts for 30 percent"
+ *   (epa.gov/watersense/how-we-use-water) → 90 gallons a day;
+ * - spread over the median US lawn, 8,186 sq ft (satellite measurements of 1,017 US homes,
+ *   measurelawn.com/average-lawn-size, 2026).
  */
-const NATIONAL_OUTDOOR_GALLONS_PER_YEAR = 90 * 365;
+const NATIONAL_GALLONS_PER_SQFT_YEAR = (90 * 365) / 8186;
 
 type Day = { et0: number; rain: number; meanTempC: number };
 
@@ -62,7 +65,7 @@ type Climate = {
   meanAnnualTempC: number;
 };
 
-export type Rating = 'Great' | 'Good' | 'Fair' | 'High';
+export type Rating = 'Great' | 'Fair' | 'Bad';
 
 export type Estimate = {
   /** US gallons (converted to liters for display when Settings is on metric). */
@@ -70,7 +73,7 @@ export type Estimate = {
   yearlyGallons: number;
   weeklyCost: number;
   yearlyCost: number;
-  /** This lawn's yearly watering vs the national average household's outdoor use. */
+  /** This lawn's water per square foot vs the national average lawn's (100 = average). */
   percentOfNational: number;
   rating: Rating;
   grass: 'cool-season' | 'warm-season';
@@ -111,11 +114,11 @@ function weeklyNeedMm(lastWeek: Day[], nextWeek: Day[], kc: number): number {
   return Math.max(0, need - rainCredit);
 }
 
+/** At or under the national average is Great; up to twice it, Fair; more, Bad. */
 function ratingFor(percent: number): Rating {
-  if (percent < 60) return 'Great';
-  if (percent < 100) return 'Good';
-  if (percent < 140) return 'Fair';
-  return 'High';
+  if (percent <= 100) return 'Great';
+  if (percent <= 200) return 'Fair';
+  return 'Bad';
 }
 
 /** Turf coefficient for the local climate: warm-season grasses where it's warm year-round. */
@@ -128,7 +131,7 @@ export function estimateLawn(squareFeet: number, climate: Climate): Estimate {
 
   const weeklyUs = toUsGallons(weeklyNeedMm(climate.lastWeek, climate.nextWeek, kc));
   const yearlyUs = toUsGallons(yearlyNeedMm(climate.lastYear, kc));
-  const percentOfNational = (yearlyUs / NATIONAL_OUTDOOR_GALLONS_PER_YEAR) * 100;
+  const percentOfNational = (yearlyUs / squareFeet / NATIONAL_GALLONS_PER_SQFT_YEAR) * 100;
 
   return {
     weeklyGallons: weeklyUs,

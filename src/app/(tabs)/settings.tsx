@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { HOME_SECTIONS, useAppState, type Units } from '@/lib/app-state';
 import { dimensionLabels } from '@/lib/dimensions';
@@ -225,9 +225,11 @@ function ResetPlacementButton({ y, onPress }: { y: number; onPress: () => void }
         { borderRadius: 17 * s, padding: 4 * s, opacity: pressed ? 0.7 : 1 },
       ]}
     >
-      <Text style={[styles.inner, { borderRadius: 13 * s, fontSize: 13 * s, lineHeight: 24 * s }]} maxFontSizeMultiplier={1.1}>
-        Reset Placement
-      </Text>
+      <View style={[styles.inner, { borderRadius: 13 * s }]}>
+        <Text style={[styles.label, { fontSize: 13 * s }]} maxFontSizeMultiplier={1.1}>
+          Reset Placement
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -235,13 +237,6 @@ function ResetPlacementButton({ y, onPress }: { y: number; onPress: () => void }
 const styles = StyleSheet.create({
   // Same look as the Figma outlined button: white pill, grey outline, light grey inner pill.
   outline: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#CCCDCE' },
-  inner: {
-    flex: 1,
-    overflow: 'hidden',
-    backgroundColor: '#F4F4F4',
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    fontFamily: 'GoogleSansFlex_400Regular',
-    color: '#000',
-  },
+  inner: { flex: 1, backgroundColor: '#F4F4F4', alignItems: 'center', justifyContent: 'center' },
+  label: { fontFamily: 'GoogleSansFlex_400Regular', color: '#000' },
 });
