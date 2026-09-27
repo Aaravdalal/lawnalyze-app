@@ -1,6 +1,7 @@
 import * as Haptics from 'expo-haptics';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, StyleSheet, View, type GestureResponderEvent } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { useFrame } from './Artboard';
 
@@ -19,189 +20,189 @@ type Props<K extends string> = {
 
 /** Hold this long (ms) without moving to pick a section up. */
 const HOLD_MS = 350;
-/** Moving further than this (px) before then is a normal touch, not a drag. */
-const SLOP = 8;
+/** Picked-up sections grow by this much. */
+const LIFT_SCALE = 1.03;
+// Driven from JS, not the native driver: on Android the native driver moves views behind
+// React's back, so a re-render (like saving the new order on drop) could put a section back
+// at an old position, on top of another one. Three views are cheap to move from JS.
+const SLIDE = { duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: false } as const;
 
-/** The finger's screen y (web only reports positions on the touch list). */
-const touchY = (e: GestureResponderEvent) => e.nativeEvent.touches?.[0]?.pageY ?? e.nativeEvent.pageY;
+type Drag<K> = { key: K; startOffset: number; order: K[] };
 
 /**
  * Sections stacked in a chosen order, in the space the Figma sections cover (the gaps between
  * them stay the same). Press and hold a section to pick it up, drag it up or down, and the
  * others slide out of its way; letting go drops it in its new place.
+ *
+ * The hold-then-drag is a native gesture (react-native-gesture-handler): once it starts, it
+ * cancels any tap on the buttons underneath, and taps that end before the hold work as usual.
  */
 export function DragSections<K extends string>({ frames, order, onReorder, children }: Props<K>) {
   const frame = useFrame();
   const s = frame.scale;
-  const keys = Object.keys(frames) as K[];
-  const first = Math.min(...keys.map((k) => frames[k].top));
-  const last = Math.max(...keys.map((k) => frames[k].top + frames[k].h));
-  const gap = (last - first - keys.reduce((sum, k) => sum + frames[k].h, 0)) / Math.max(1, keys.length - 1);
+  const keys = useMemo(() => Object.keys(frames) as K[], [frames]);
 
-  /** How far each section sits from its Figma spot for an order (design pts). */
+  /** Design y of each section's top for an order, and helpers (design pts). */
+  const layout = useMemo(() => {
+    const first = Math.min(...keys.map((k) => frames[k].top));
+    const last = Math.max(...keys.map((k) => frames[k].top + frames[k].h));
+    const gap = (last - first - keys.reduce((sum, k) => sum + frames[k].h, 0)) / Math.max(1, keys.length - 1);
+    const tops = (o: K[]) => {
+      let top = first;
+      const result = {} as Record<K, number>;
+      for (const k of o) {
+        result[k] = top;
+        top += frames[k].h + gap;
+      }
+      return result;
+    };
+    return { first, last, tops };
+  }, [keys, frames]);
   const offsetsFor = (o: K[]) => {
-    let top = first;
-    const result = {} as Record<K, number>;
-    for (const k of o) {
-      result[k] = top - frames[k].top;
-      top += frames[k].h + gap;
-    }
-    return result;
+    const tops = layout.tops(o);
+    return Object.fromEntries(keys.map((k) => [k, tops[k] - frames[k].top])) as Record<K, number>;
   };
 
-  // The order being shown: follows `order`, and changes live while dragging.
-  const [shown, setShown] = useState(order);
-  const [dragging, setDragging] = useState<K | null>(null);
-  const [positions] = useState(() => {
+  // One translate (design pts) and one scale per section.
+  const [anim] = useState(() => {
     const offsets = offsetsFor(order);
-    return Object.fromEntries(keys.map((k) => [k, new Animated.Value(offsets[k] * s)])) as Record<K, Animated.Value>;
+    return Object.fromEntries(
+      keys.map((k) => [k, { y: new Animated.Value(offsets[k]), scale: new Animated.Value(1) }]),
+    ) as Record<K, { y: Animated.Value; scale: Animated.Value }>;
   });
-  const [lift] = useState(() => new Animated.Value(0));
-  const drag = useRef<{ key: K; startY: number; startOffset: number; order: K[] } | null>(null);
-  const touch = useRef<{ y: number; timer: ReturnType<typeof setTimeout> } | null>(null);
+  // The section drawn over the others: the one picked up most recently. It stays on top after
+  // it's dropped, so nothing about the stacking changes while it slides into place.
+  // The same values in screen dp, for the views.
+  const translate = useMemo(
+    () =>
+      Object.fromEntries(keys.map((k) => [k, Animated.multiply(anim[k].y, s)])) as Record<
+        K,
+        Animated.AnimatedMultiplication<number>
+      >,
+    [anim, keys, s],
+  );
+  const [onTop, setOnTop] = useState<K | null>(null);
+  const drag = useRef<Drag<K> | null>(null);
+  // The order the sections are showing (or sliding to), so a saved drop isn't animated twice.
+  const shown = useRef(order.join());
 
-  // A new saved order (e.g. Reset Placement in Settings) while not dragging.
+  // Slide every section that isn't held into its spot.
+  function settle(o: K[], except?: K) {
+    const offsets = offsetsFor(o);
+    for (const k of keys) if (k !== except) Animated.timing(anim[k].y, { toValue: offsets[k], ...SLIDE }).start();
+  }
+
+  // A new saved order that didn't come from a drag here (e.g. Reset Placement in Settings).
   const orderKey = order.join();
   useEffect(() => {
-    if (!drag.current) setShown(order);
+    if (drag.current || shown.current === orderKey) return;
+    shown.current = orderKey;
+    settle(order);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 
-  // Slide every section that isn't held into its spot for the shown order.
-  const shownKey = shown.join();
-  useEffect(() => {
-    const offsets = offsetsFor(shown);
-    for (const k of keys) {
-      if (k === drag.current?.key) continue;
-      Animated.timing(positions[k], {
-        toValue: offsets[k] * s,
-        duration: 220,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shownKey, s]);
-
-  /** Design y of a screen point. */
-  const designY = (pageY: number) => (pageY - frame.top(0)) / s;
-
   function sectionAt(y: number): K | null {
-    const offsets = offsetsFor(shown);
-    return keys.find((k) => y >= frames[k].top + offsets[k] && y <= frames[k].top + offsets[k] + frames[k].h) ?? null;
+    const tops = layout.tops(order);
+    return keys.find((k) => y >= tops[k] && y <= tops[k] + frames[k].h) ?? null;
   }
 
-  function pickUp(key: K, pageY: number) {
-    drag.current = { key, startY: pageY, startOffset: offsetsFor(shown)[key], order: shown };
-    setDragging(key);
-    Animated.timing(lift, { toValue: 1, duration: 150, useNativeDriver: true }).start();
+  function start(localY: number) {
+    const key = sectionAt((localY - frame.top(0)) / s);
+    if (!key) return;
+    drag.current = { key, startOffset: offsetsFor(order)[key], order };
+    anim[key].y.stopAnimation();
+    anim[key].y.setValue(offsetsFor(order)[key]);
+    setOnTop(key);
+    Animated.timing(anim[key].scale, { toValue: LIFT_SCALE, duration: 150, useNativeDriver: false }).start();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
   }
 
-  function move(pageY: number) {
+  function update(translationY: number) {
     const d = drag.current;
     if (!d) return;
-    const offset = d.startOffset + (pageY - d.startY) / s;
-    // Keep it within the sections' area.
-    const clamped = Math.min(last - frames[d.key].h - frames[d.key].top, Math.max(first - frames[d.key].top, offset));
-    positions[d.key].setValue(clamped * s);
-    // Where it would sit best: the order whose spot for it is closest to where it's held.
-    const center = frames[d.key].top + clamped + frames[d.key].h / 2;
-    const others = d.order.filter((k) => k !== d.key);
-    let best = d.order;
-    let bestDistance = Infinity;
-    for (let i = 0; i <= others.length; i++) {
-      const candidate = [...others.slice(0, i), d.key, ...others.slice(i)];
-      const spot = frames[d.key].top + offsetsFor(candidate)[d.key] + frames[d.key].h / 2;
-      if (Math.abs(spot - center) < bestDistance) {
-        bestDistance = Math.abs(spot - center);
-        best = candidate;
-      }
+    const { top, h } = frames[d.key];
+    // Follow the finger, kept within the sections' area.
+    const heldTop = Math.min(layout.last - h, Math.max(layout.first, top + d.startOffset + translationY / s));
+    anim[d.key].y.setValue(heldTop - top);
+
+    // Swap with a neighbour once the held section passes the middle of its spot. (Swapping
+    // back needs it to pass the middle again, so it never flickers between two orders.)
+    let next = d.order;
+    for (;;) {
+      const i = next.indexOf(d.key);
+      const tops = layout.tops(next);
+      const above = next[i - 1];
+      const below = next[i + 1];
+      if (above !== undefined && heldTop < tops[above] + frames[above].h / 2) {
+        next = [...next.slice(0, i - 1), d.key, above, ...next.slice(i + 1)];
+      } else if (below !== undefined && heldTop + h > tops[below] + frames[below].h / 2) {
+        next = [...next.slice(0, i), below, d.key, ...next.slice(i + 2)];
+      } else break;
     }
-    if (best.join() !== d.order.join()) {
-      d.order = best;
-      setShown(best);
+    if (next !== d.order) {
+      d.order = next;
+      settle(next, d.key);
       Haptics.selectionAsync().catch(() => {});
     }
   }
 
-  function drop() {
+  function end() {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
     Animated.parallel([
-      Animated.timing(positions[d.key], {
-        toValue: offsetsFor(d.order)[d.key] * s,
-        duration: 200,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(lift, { toValue: 0, duration: 200, useNativeDriver: true }),
-    ]).start(() => setDragging(null));
-    if (d.order.join() !== order.join()) onReorder(d.order);
+      Animated.timing(anim[d.key].y, { toValue: offsetsFor(d.order)[d.key], ...SLIDE }),
+      Animated.timing(anim[d.key].scale, { toValue: 1, ...SLIDE }),
+    ]).start();
+    const dropped = d.order.join();
+    if (dropped !== shown.current) {
+      shown.current = dropped;
+      onReorder(d.order);
+    }
   }
 
-  function cancelHold() {
-    if (touch.current) clearTimeout(touch.current.timer);
-    touch.current = null;
-  }
-
-  const onTouchStart = (e: GestureResponderEvent) => {
-    if (e.nativeEvent.touches && e.nativeEvent.touches.length > 1) return cancelHold();
-    const pageY = touchY(e);
-    const key = sectionAt(designY(pageY));
-    cancelHold();
-    if (!key) return;
-    touch.current = { y: pageY, timer: setTimeout(() => pickUp(key, touch.current?.y ?? pageY), HOLD_MS) };
-  };
-  const onTouchMove = (e: GestureResponderEvent) => {
-    const pageY = touchY(e);
-    if (drag.current) return move(pageY);
-    if (touch.current && Math.abs(pageY - touch.current.y) > SLOP) cancelHold();
-  };
-  const onTouchEnd = () => {
-    cancelHold();
-    drop();
-  };
+  // Handlers change every render; the gesture reads the latest through a ref.
+  const handlers = useRef({ start, update, end });
+  handlers.current = { start, update, end };
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(HOLD_MS)
+        .runOnJS(true)
+        .onStart((e) => handlers.current.start(e.y))
+        .onUpdate((e) => handlers.current.update(e.translationY))
+        .onFinalize(() => handlers.current.end()),
+    [],
+  );
 
   return (
-    <View
-      style={StyleSheet.absoluteFill}
-      onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
-      onTouchEnd={onTouchEnd}
-      onTouchCancel={onTouchEnd}
-      // While a section is held, take the touch from the buttons inside it (so letting go
-      // doesn't also tap one), and don't give it up.
-      onStartShouldSetResponderCapture={() => !!drag.current}
-      onMoveShouldSetResponderCapture={() => !!drag.current}
-      onResponderTerminationRequest={() => !drag.current}
-    >
-      {keys.map((k) => {
-        const held = dragging === k;
-        const scale = held ? lift.interpolate({ inputRange: [0, 1], outputRange: [1, 1.03] }) : 1;
-        return (
-          <Animated.View
-            key={k}
-            pointerEvents="box-none"
-            style={[
-              StyleSheet.absoluteFill,
-              held && styles.held,
-              {
-                transform: [{ translateY: positions[k] }, { scale }],
-                // Scale around the section's middle rather than the screen's.
-                transformOrigin: `50% ${frame.top(frames[k].top + frames[k].h / 2)}px 0px`,
-              },
-            ]}
-          >
-            {children[k]}
-          </Animated.View>
-        );
-      })}
-    </View>
+    <GestureDetector gesture={gesture}>
+      <View collapsable={false} style={StyleSheet.absoluteFill}>
+        {keys.map((k) => {
+          // Each section's box covers just its Figma spot, so it grows around its own middle;
+          // the content inside is shifted back up to lay out on the whole frame as usual.
+          const boxTop = frame.top(frames[k].top);
+          return (
+            <Animated.View
+              key={k}
+              pointerEvents="box-none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: boxTop,
+                height: frames[k].h * s,
+                zIndex: onTop === k ? 1 : 0,
+                transform: [{ translateY: translate[k] }, { scale: anim[k].scale }],
+              }}
+            >
+              <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, top: -boxTop, height: frame.height }}>
+                {children[k]}
+              </View>
+            </Animated.View>
+          );
+        })}
+      </View>
+    </GestureDetector>
   );
 }
-
-const styles = StyleSheet.create({
-  held: { zIndex: 10, opacity: 0.92 },
-});

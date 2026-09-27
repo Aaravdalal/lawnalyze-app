@@ -8,6 +8,7 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppStateProvider, useAppState } from '@/lib/app-state';
 import { prefetchClimate, useLawnEstimate } from '@/lib/estimate';
@@ -18,9 +19,12 @@ SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   return (
-    <AppStateProvider>
-      <RootNavigator />
-    </AppStateProvider>
+    // Gesture handler: native drag gestures (e.g. rearranging Home's sections).
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AppStateProvider>
+        <RootNavigator />
+      </AppStateProvider>
+    </GestureHandlerRootView>
   );
 }
 
