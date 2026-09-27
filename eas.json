@@ -3,16 +3,25 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "npm": {
+        "args": ["--legacy-peer-deps"]
       }
     },
     "preview2": {
       "android": {
         "buildType": "apk"
+      },
+      "npm": {
+        "args": ["--legacy-peer-deps"]
       }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
+      },
+      "npm": {
+        "args": ["--legacy-peer-deps"]
       }
     }
   }
