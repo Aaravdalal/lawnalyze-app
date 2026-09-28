@@ -187,7 +187,7 @@ function OptionRow({ y, position, text, selected, onPress, label }: OptionRowPro
       <Layer asset={selected ? settings.rowSelected : settings.rowUnselected} x={34} y={y} flip={flip} />
       {typeof text === 'string' ? (
         // Live text in the Figma row font, where there's no export for the wording.
-        <DesignText x={42} y={y + 7} w={200} h={17} size={13}>
+        <DesignText x={42} y={y + 7} w={200} h={17} size={14} weight="medium">
           {text}
         </DesignText>
       ) : (

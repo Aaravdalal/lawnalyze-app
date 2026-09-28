@@ -131,7 +131,9 @@ export function estimateLawn(squareFeet: number, climate: Climate): Estimate {
 
   const weeklyUs = toUsGallons(weeklyNeedMm(climate.lastWeek, climate.nextWeek, kc));
   const yearlyUs = toUsGallons(yearlyNeedMm(climate.lastYear, kc));
-  const percentOfNational = (yearlyUs / squareFeet / NATIONAL_GALLONS_PER_SQFT_YEAR) * 100;
+  // Baseline: what an average American lawn uses per year
+  const baselineYearlyUs = NATIONAL_GALLONS_PER_SQFT_YEAR * squareFeet;
+  const percentOfNational = (yearlyUs / baselineYearlyUs) * 100;
 
   return {
     weeklyGallons: weeklyUs,

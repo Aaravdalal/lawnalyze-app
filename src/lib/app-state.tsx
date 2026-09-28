@@ -9,6 +9,9 @@ export type Units = 'customary' | 'metric';
 /** The three sections of the Home screen, which can be put in any order (Settings > Edit Placement). */
 export type HomeSection = 'weather' | 'lawns' | 'cost';
 export const HOME_SECTIONS: HomeSection[] = ['weather', 'lawns', 'cost'];
+/** The two sections of the Usage screen, which can be reordered. */
+export type UsageSection = 'usage' | 'cost';
+export const USAGE_SECTIONS: UsageSection[] = ['usage', 'cost'];
 export type Preferences = {
   units: Units;
   weatherAlerts: boolean;
@@ -16,6 +19,8 @@ export type Preferences = {
   showDimensions: boolean;
   /** Home's sections, top to bottom. */
   homeOrder: HomeSection[];
+  /** Usage's sections, top to bottom. */
+  usageOrder: UsageSection[];
 };
 /** A marked lawn area: its corner points in order. */
 export type Outline = LatLng[];
@@ -34,7 +39,13 @@ const INITIAL_STATE: StoredState = {
   onboarded: false,
   lawn: null,
   outlines: [],
-  preferences: { units: 'customary', weatherAlerts: true, showDimensions: false, homeOrder: HOME_SECTIONS },
+  preferences: {
+    units: 'customary',
+    weatherAlerts: true,
+    showDimensions: false,
+    homeOrder: HOME_SECTIONS,
+    usageOrder: USAGE_SECTIONS,
+  },
 };
 
 type AppState = StoredState & {
@@ -64,6 +75,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const order = preferences.homeOrder;
         if (order.length !== HOME_SECTIONS.length || !HOME_SECTIONS.every((s) => order.includes(s))) {
           preferences.homeOrder = HOME_SECTIONS;
+        }
+        const usageOrder = preferences.usageOrder;
+        if (
+          !usageOrder ||
+          usageOrder.length !== USAGE_SECTIONS.length ||
+          !USAGE_SECTIONS.every((s) => usageOrder.includes(s))
+        ) {
+          preferences.usageOrder = USAGE_SECTIONS;
         }
         setState({ ...stored, preferences });
       })
