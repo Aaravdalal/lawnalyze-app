@@ -108,6 +108,5 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
     backgroundColor: 'transparent',
     outlineWidth: 0,
-    borderRadius: 12,
   },
 });

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Animated, Easing, Image, Pressable, StyleSheet, View } from 'react-native';
+import { Animated, Image, Pressable, StyleSheet, View } from 'react-native';
 
 import { useFrame } from './Artboard';
 import type { UiAsset } from './assets';
@@ -58,10 +58,12 @@ export function SwapRow({ x, y, h, widths, gap, boxes }: Props) {
     if (current >= Math.max(...widths)) return;
     const next = !swapped;
     setSwapped(next);
-    Animated.timing(progress, {
+    // A spring that overshoots a little, so the boxes bounce into their new sizes.
+    Animated.spring(progress, {
       toValue: next ? 1 : 0,
-      duration: 320,
-      easing: Easing.inOut(Easing.cubic),
+      stiffness: 260,
+      damping: 19,
+      mass: 1,
       useNativeDriver: false, // animates layout (left/width/fontSize)
     }).start();
   }

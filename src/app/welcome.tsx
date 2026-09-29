@@ -10,7 +10,6 @@ export default function WelcomeBackScreen() {
   return (
     <Artboard
       cardBottom={548}
-      footer={common.footerGreen}
       gradientY={3}
       compactChin
       glows={[
@@ -27,7 +26,7 @@ export default function WelcomeBackScreen() {
       <Layer asset={welcome.readyTo} x={177} y={241} />
       <Layer asset={welcome.start} x={47} y={283} />
       <Layer asset={welcome.saving} x={169} y={333} />
-      <Layer asset={common.logo} x={16} y={414} anchor="footer" />
+      <Layer asset={common.logo} x={28.6} y={431.5} anchor="footer" />
       <PressableLayer
         asset={welcome.btnContinue}
         grow={BUTTON_GROW}

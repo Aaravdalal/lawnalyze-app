@@ -1,4 +1,4 @@
-import type { Outline } from '@/lib/app-state';
+import { MAX_LAWNS, type Outline } from '@/lib/app-state';
 import type { LatLng } from '@/lib/location';
 
 // Leaflet with Google Maps satellite + labels (hybrid) tiles, same as the Lawnalyze website.
@@ -32,7 +32,14 @@ export type SatelliteOptions = {
   showPin: boolean;
   /** Start zoomed out and fly in to `center` (the Locate screen); otherwise open right on it. */
   flyIn: boolean;
+  /**
+   * Open zoomed to fit the outlines (when there are any), keeping this much room (dp) clear on
+   * each side, e.g. for the drawing tools over the map's left edge.
+   */
+  fitInsets?: Insets;
 };
+
+export type Insets = { left: number; top: number; right: number; bottom: number };
 
 export type MapTool = 'draw' | 'add' | 'delete';
 
@@ -44,7 +51,11 @@ export type MapCommand =
   | { type: 'refresh' };
 
 /** Events the page sends back to the app. */
-export type MapEvent = { type: 'outlines'; outlines: Outline[] } | { type: 'drawing'; drawing: boolean };
+export type MapEvent =
+  | { type: 'outlines'; outlines: Outline[] }
+  | { type: 'drawing'; drawing: boolean }
+  /** Tried to start another lawn area with MAX_LAWNS already marked. */
+  | { type: 'limit' };
 
 /** Tags page -> app messages on web, where other frames can post to the window too. */
 export const MAP_EVENT_SOURCE = 'lawnalyze-map';
@@ -60,6 +71,7 @@ export function buildSatelliteHtml({
   editable,
   showPin,
   flyIn,
+  fitInsets,
 }: SatelliteOptions): string {
   // With a known location, open on it (or start zoomed out over it and fly in once loaded).
   const start = center ? { ...center, zoom: flyIn ? Math.max(zoom - 6, 3) : zoom } : US_OVERVIEW;
@@ -81,18 +93,18 @@ export function buildSatelliteHtml({
 <link rel="preconnect" href="https://mt3.google.com" />
 <link rel="stylesheet" href="${LEAFLET}/leaflet.min.css" />
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
-  #map { position: absolute; inset: 0; border-radius: ${num(cornerRadius)}px; overflow: hidden; background: #2c3a30; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #2c3a30; }
+  #map { position: absolute; inset: 0; border-radius: ${num(cornerRadius)}px; overflow: hidden; background: transparent; }
   .leaflet-container .leaflet-control-attribution {
     font: 7px/1.5 sans-serif; color: #333; background: rgba(255, 255, 255, 0.6);
     padding: 0 4px; margin: 0 ${num(inset)}px ${num(Math.round(inset / 2))}px 0; border-radius: 4px;
   }
-  /* Outline handles: big invisible touch targets around small visible dots. */
+  /* Outline handles: big invisible touch targets (40px) around small visible dots. */
   .corner, .mid { box-sizing: border-box; border-radius: 50%; }
   /* Zoomed out, the lawn is a speck: hide its editing handles (and their touch areas). */
   .zoomed-out .lawn-handle { display: none; }
-  .corner { width: 18px; height: 18px; margin: 6px; background: #2F6BFF; border: 3px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
-  .mid { width: 14px; height: 14px; margin: 8px; background: rgba(255,255,255,.85); border: 2px solid #2F6BFF; }
+  .corner { width: 18px; height: 18px; margin: 11px; background: #2F6BFF; border: 3px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
+  .mid { width: 14px; height: 14px; margin: 13px; background: rgba(255,255,255,.85); border: 2px solid #2F6BFF; }
 </style>
 </head>
 <body>
@@ -105,6 +117,9 @@ export function buildSatelliteHtml({
     // Touch feel: smooth (unsnapped) pinch zoom, longer inertia glide, no tile fade-in.
     zoomSnap: 0, zoomDelta: 0.5, inertiaDeceleration: 2200, easeLinearity: 0.25,
     fadeAnimation: false, bounceAtZoomLimits: false, tapTolerance: 20,
+    // A tap still counts (adds a corner) if the finger shifts a little; Leaflet's default of 3px
+    // is for a mouse, and made taps on a phone often turn into tiny drags that do nothing.
+    clickTolerance: 10,
     dragging: ${i}, touchZoom: ${i}, scrollWheelZoom: ${i}, doubleClickZoom: false, boxZoom: false, keyboard: false,
     renderer: L.svg({ padding: 0.5 })
   });
@@ -210,8 +225,9 @@ export function buildSatelliteHtml({
   // The selected lawn shows handles: drag a corner to move it, drag or tap a midpoint to add one.
   var EDITABLE = ${editable ? 'true' : 'false'};
   var BLUE = '#2F6BFF';
+  var MAX_LAWNS = ${MAX_LAWNS};
   var lawns = [], active = null, drawing = false;
-  function handleIcon(cls) { return L.divIcon({ className: 'lawn-handle', html: '<div class="' + cls + '"></div>', iconSize: [30, 30], iconAnchor: [15, 15] }); }
+  function handleIcon(cls) { return L.divIcon({ className: 'lawn-handle', html: '<div class="' + cls + '"></div>', iconSize: [40, 40], iconAnchor: [20, 20] }); }
   var CORNER = handleIcon('corner'), MID = handleIcon('mid');
 
   function emit() {
@@ -221,13 +237,19 @@ export function buildSatelliteHtml({
   }
   function setDrawing(on) { drawing = on; post({ type: 'drawing', drawing: on }); }
   function newLawn(points) {
-    var lawn = { pts: points || [], handles: [],
+    var lawn = { pts: points || [], handles: [], mids: [],
       shape: L.polygon([], { renderer: outlineRenderer, color: BLUE, weight: 3, fillColor: BLUE, fillOpacity: 0.2, interactive: EDITABLE }).addTo(map) };
     if (EDITABLE) lawn.shape.on('click', function (e) { L.DomEvent.stop(e); if (!drawing) select(lawn); });
     lawns.push(lawn);
     return lawn;
   }
-  function clearHandles(lawn) { lawn.handles.forEach(function (h) { map.removeLayer(h); }); lawn.handles = []; }
+  function clearHandles(lawn) { lawn.handles.forEach(function (h) { map.removeLayer(h); }); lawn.handles = []; lawn.mids = []; }
+  function midpoint(a, b) { return L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2); }
+  // While a corner is dragged, the midpoint handles next to it follow along.
+  function moveMids(lawn) {
+    var n = lawn.pts.length;
+    lawn.mids.forEach(function (m, i) { m.setLatLng(midpoint(lawn.pts[i], lawn.pts[(i + 1) % n])); });
+  }
   function redraw(lawn) {
     lawn.shape.setLatLngs(lawn.pts);
     clearHandles(lawn);
@@ -236,16 +258,17 @@ export function buildSatelliteHtml({
     // Midpoint handles (the closing edge too, once it's a polygon).
     for (var e = 0; e < (n >= 3 ? n : n - 1); e++) (function (i) {
       var a = lawn.pts[i], b = lawn.pts[(i + 1) % n], inserted = false;
-      var m = L.marker([(a.lat + b.lat) / 2, (a.lng + b.lng) / 2], { icon: MID, draggable: true, zIndexOffset: 900 }).addTo(map);
+      var m = L.marker(midpoint(a, b), { icon: MID, draggable: true, zIndexOffset: 900 }).addTo(map);
       m.on('dragstart', function () { lawn.pts.splice(i + 1, 0, m.getLatLng()); inserted = true; });
       m.on('drag', function () { lawn.pts[i + 1] = m.getLatLng(); lawn.shape.setLatLngs(lawn.pts); });
       m.on('dragend', function () { redraw(lawn); emit(); });
       m.on('click', function (ev) { L.DomEvent.stop(ev); if (!inserted) { lawn.pts.splice(i + 1, 0, m.getLatLng()); redraw(lawn); emit(); } });
       lawn.handles.push(m);
+      lawn.mids.push(m);
     })(e);
     lawn.pts.forEach(function (p, i) {
       var h = L.marker(p, { icon: CORNER, draggable: true, zIndexOffset: 1000 }).addTo(map);
-      h.on('drag', function () { lawn.pts[i] = h.getLatLng(); lawn.shape.setLatLngs(lawn.pts); });
+      h.on('drag', function () { lawn.pts[i] = h.getLatLng(); lawn.shape.setLatLngs(lawn.pts); moveMids(lawn); });
       h.on('dragend', function () { redraw(lawn); emit(); });
       h.on('click', function (ev) { L.DomEvent.stop(ev); if (drawing && i === 0 && lawn.pts.length >= 3) finish(); });
       lawn.handles.push(h);
@@ -263,7 +286,11 @@ export function buildSatelliteHtml({
     if (active) redraw(active);
     emit();
   }
-  function startNew() { if (drawing) finish(); select(newLawn()); setDrawing(true); }
+  function startNew() {
+    if (drawing) finish();
+    if (lawns.length >= MAX_LAWNS) { post({ type: 'limit' }); return; }
+    select(newLawn()); setDrawing(true);
+  }
 
   map.on('click', function (e) {
     if (!drawing || !active) return;
@@ -291,6 +318,17 @@ export function buildSatelliteHtml({
     newLawn(points.map(function (p) { return L.latLng(p[0], p[1]); }));
   });
   lawns.forEach(redraw);
+  ${
+    fitInsets && outlines.length
+      ? `// Open on the whole of every marked lawn, clear of the tools.
+  map.fitBounds(L.featureGroup(lawns.map(function (l) { return l.shape; })).getBounds(), {
+    paddingTopLeft: [${num(fitInsets.left)}, ${num(fitInsets.top)}],
+    paddingBottomRight: [${num(fitInsets.right)}, ${num(fitInsets.bottom)}],
+    maxZoom: 20.5, animate: false
+  });
+  updateHandleVisibility();`
+      : ''
+  }
   if (EDITABLE) {
     if (lawns.length) select(lawns[lawns.length - 1]);
     else startNew(); // nothing marked yet: start drawing straight away

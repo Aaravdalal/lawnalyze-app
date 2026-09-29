@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Easing, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { useFrame } from './Artboard';
@@ -22,10 +22,11 @@ type Props<K extends string> = {
 const HOLD_MS = 350;
 /** Picked-up sections grow by this much. */
 const LIFT_SCALE = 1.03;
-// Driven from JS, not the native driver: on Android the native driver moves views behind
-// React's back, so a re-render (like saving the new order on drop) could put a section back
-// at an old position, on top of another one. Three views are cheap to move from JS.
-const SLIDE = { duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: false } as const;
+// Sections glide into place on a bouncy spring: a little past their spot, then back (damping
+// ratio ≈ 0.6). Driven from JS, not the native driver: on Android the native driver moves views
+// behind React's back, so a re-render could put a section back at an old position. Three views
+// are cheap to move from JS.
+const GLIDE = { stiffness: 260, damping: 19, mass: 1, useNativeDriver: false } as const;
 
 type Drag<K> = { key: K; startOffset: number; order: K[] };
 
@@ -83,35 +84,40 @@ export function DragSections<K extends string>({ frames, order, onReorder, child
   );
   const [onTop, setOnTop] = useState<K | null>(null);
   const drag = useRef<Drag<K> | null>(null);
-  // The order the sections are showing (or sliding to), so a saved drop isn't animated twice.
-  const shown = useRef(order.join());
+  // The order the sections are showing (or sliding to). A drop is saved only once the section
+  // has settled (saving re-renders every screen, which would make the glide stutter), so until
+  // then this is ahead of `order`.
+  const shown = useRef(order);
+  const saveOrder = useRef(onReorder);
+  saveOrder.current = onReorder;
 
   // Slide every section that isn't held into its spot.
   function settle(o: K[], except?: K) {
     const offsets = offsetsFor(o);
-    for (const k of keys) if (k !== except) Animated.timing(anim[k].y, { toValue: offsets[k], ...SLIDE }).start();
+    for (const k of keys) if (k !== except) Animated.spring(anim[k].y, { toValue: offsets[k], ...GLIDE }).start();
   }
 
   // A new saved order that didn't come from a drag here (e.g. Reset Placement in Settings).
   const orderKey = order.join();
   useEffect(() => {
-    if (drag.current || shown.current === orderKey) return;
-    shown.current = orderKey;
+    if (drag.current || shown.current.join() === orderKey) return;
+    shown.current = order;
     settle(order);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderKey]);
 
   function sectionAt(y: number): K | null {
-    const tops = layout.tops(order);
+    const tops = layout.tops(shown.current);
     return keys.find((k) => y >= tops[k] && y <= tops[k] + frames[k].h) ?? null;
   }
 
   function start(localY: number) {
     const key = sectionAt((localY - frame.top(0)) / s);
     if (!key) return;
-    drag.current = { key, startOffset: offsetsFor(order)[key], order };
-    anim[key].y.stopAnimation();
-    anim[key].y.setValue(offsetsFor(order)[key]);
+    // Picked up where it is right now, even if it's still gliding in from a drop.
+    let at = offsetsFor(shown.current)[key];
+    anim[key].y.stopAnimation((value) => (at = value));
+    drag.current = { key, startOffset: at, order: shown.current };
     setOnTop(key);
     Animated.timing(anim[key].scale, { toValue: LIFT_SCALE, duration: 150, useNativeDriver: false }).start();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
@@ -146,19 +152,19 @@ export function DragSections<K extends string>({ frames, order, onReorder, child
     }
   }
 
-  function end() {
+  /** `velocityY`: the finger's speed when it let go (dp per second), which the glide carries on. */
+  function end(velocityY: number) {
     const d = drag.current;
     if (!d) return;
     drag.current = null;
+    const changed = d.order.join() !== shown.current.join();
+    shown.current = d.order;
     Animated.parallel([
-      Animated.timing(anim[d.key].y, { toValue: offsetsFor(d.order)[d.key], ...SLIDE }),
-      Animated.timing(anim[d.key].scale, { toValue: 1, ...SLIDE }),
-    ]).start();
-    const dropped = d.order.join();
-    if (dropped !== shown.current) {
-      shown.current = dropped;
-      onReorder(d.order);
-    }
+      Animated.spring(anim[d.key].y, { toValue: offsetsFor(d.order)[d.key], velocity: velocityY / s / 1000, ...GLIDE }),
+      Animated.spring(anim[d.key].scale, { toValue: 1, ...GLIDE }),
+    ]).start(() => {
+      if (changed) saveOrder.current(d.order);
+    });
   }
 
   // Handlers change every render; the gesture reads the latest through a ref.
@@ -171,7 +177,7 @@ export function DragSections<K extends string>({ frames, order, onReorder, child
         .runOnJS(true)
         .onStart((e) => handlers.current.start(e.y))
         .onUpdate((e) => handlers.current.update(e.translationY))
-        .onFinalize(() => handlers.current.end()),
+        .onFinalize((e) => handlers.current.end(e.velocityY)),
     [],
   );
 

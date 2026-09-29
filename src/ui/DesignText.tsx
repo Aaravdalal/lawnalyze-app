@@ -14,11 +14,14 @@ type Props = {
   align?: 'left' | 'center';
   weight?: 'regular' | 'medium';
   color?: string;
+  /** Shrink by the width estimate below (default); off for short labels known to fit, since the
+   * estimate runs wide. Either way the text still never clips (adjustsFontSizeToFit). */
+  fit?: boolean;
   children: ReactNode;
 };
 
 // Approximate Google Sans Flex advance widths (in ems), to shrink long values to fit their box.
-function textWidthEm(text: string): number {
+export function textWidthEm(text: string): number {
   let em = 0;
   for (const ch of text) {
     if (/[0-9$]/.test(ch)) em += 0.57;
@@ -38,13 +41,24 @@ export const fitFontSize = (text: string, size: number, width: number) =>
 
 /** Live text (in the Figma font) placed in a design-space box, vertically centered. Plain
  * string content shrinks as needed to fit the box's width (so large numbers never clip). */
-export function DesignText({ x, y, w, h, anchor, size, align = 'left', weight = 'regular', color, children }: Props) {
+export function DesignText({ x, y, w, h, anchor, size, align = 'left', weight = 'regular', color, fit = true, children }: Props) {
   const rect = useRect({ x, y, anchor }, w, h);
   const { scale } = useFrame();
   const text = Array.isArray(children) ? children.join('') : typeof children === 'string' || typeof children === 'number' ? String(children) : null;
-  const fontSize = text ? fitFontSize(text, size, w) : size;
+  const fontSize = text && fit ? fitFontSize(text, size, w) : size;
+  // Room above and below the box, centered on it: Android shrinks text (adjustsFontSizeToFit)
+  // that's taller than its box, and a tight Figma box plus the font's line height is just over,
+  // so live text came out smaller than the Figma text beside it. Only the width should shrink it.
+  const room = fontSize * scale;
   return (
-    <View pointerEvents="none" style={[rect, styles.box, { alignItems: align === 'center' ? 'center' : 'flex-start' }]}>
+    <View
+      pointerEvents="none"
+      style={[
+        rect,
+        styles.box,
+        { top: rect.top - room, height: rect.height + 2 * room, alignItems: align === 'center' ? 'center' : 'flex-start' },
+      ]}
+    >
       <Text
         numberOfLines={1}
         adjustsFontSizeToFit
@@ -59,6 +73,6 @@ export function DesignText({ x, y, w, h, anchor, size, align = 'left', weight = 
 
 const styles = StyleSheet.create({
   box: { justifyContent: 'center' },
-  text: { fontFamily: 'GoogleSansFlex_400Regular', color: '#000' },
+  text: { fontFamily: 'GoogleSansFlex_400Regular', color: '#000', includeFontPadding: false },
   medium: { fontFamily: 'GoogleSansFlex_500Medium' },
 });

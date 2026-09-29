@@ -10,7 +10,6 @@ export default function IntroScreen() {
   return (
     <Artboard
       cardBottom={548}
-      footer={common.footerGreen}
       gradientY={0}
       compactChin
       glows={[
@@ -27,7 +26,7 @@ export default function IntroScreen() {
       <Layer asset={intro.savingWater} x={148} y={241} />
       <Layer asset={intro.since} x={27} y={282} />
       <Layer asset={intro.n2026} x={183} y={335} />
-      <Layer asset={common.logo} x={16} y={414} anchor="footer" />
+      <Layer asset={common.logo} x={28.6} y={431.5} anchor="footer" />
       <PressableLayer
         asset={intro.btnGetStarted}
         grow={BUTTON_GROW}

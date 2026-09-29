@@ -1,11 +1,9 @@
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { Animated, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 
-import { GREEN, TAB_CHIN_DROP, useFrameMetrics } from './Artboard';
+import { TAB_CHIN_DROP, useFrameMetrics } from './Artboard';
 import { ui } from './assets';
-import { CARD_BOTTOM_H, chinPath } from './chin';
 
 // Geometry of the Figma nav bar exports (design pts, relative to the bar's left edge):
 // each tab's pill cell, 26pt tall. The active tab gets its own pill; the tabs before and
@@ -22,8 +20,16 @@ const GROUP_H = BAR.h + DOT.gap + DOT.size; // pills + dot, centered in the gree
 const CARD_BOTTOM = 568;
 /** A touch on the bar held longer than this before lifting counts as press-and-drag. */
 const HOLD_MS = 300;
-/** How long the pill takes to slide to the tapped tab. */
-const SLIDE_MS = 260;
+/**
+ * The pill's spring: it overshoots the tapped tab a little and bounces back (damping ratio
+ * ≈ 0.6). At Home or Settings the overshoot presses it into the bar's rounded end.
+ */
+const BOUNCE = { stiffness: 320, damping: 22, mass: 1 };
+/**
+ * The overshoot grows with the distance travelled, so the long jump between Home and Settings
+ * (three tabs) gets more damping (ratio ≈ 0.75): it bounces about as far as a one-tab move.
+ */
+const LONG_JUMP_DAMPING = 27;
 
 /**
  * Where the pills sit for a given active tab: the active tab's pill, and the right end of the
@@ -52,7 +58,8 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
   const index = state.index;
   const [drawnHeight, setDrawnHeight] = useState<number | null>(null);
 
-  // The bar's position as a tab index (fractional mid-slide). Runs on the native driver, so
+  // The bar's position as a tab index (fractional mid-slide, and a little past the tab while it
+  // bounces). Runs on the native driver, so
   // the pill keeps sliding smoothly even while the new screen is busy mounting.
   const [position] = useState(() => new Animated.Value(index));
 
@@ -92,12 +99,15 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
     if (next !== index) navigation.navigate(state.routes[next].name);
   };
 
+  const previousIndex = useRef(index);
   useEffect(() => {
+    const jump = Math.abs(index - previousIndex.current);
+    previousIndex.current = index;
     // Starts from wherever the pill is now, so quick taps just redirect it.
-    Animated.timing(position, {
+    Animated.spring(position, {
       toValue: index,
-      duration: SLIDE_MS,
-      easing: Easing.out(Easing.cubic),
+      ...BOUNCE,
+      damping: jump >= TABS.length - 1 ? LONG_JUMP_DAMPING : BOUNCE.damping,
       useNativeDriver: true,
     }).start();
   }, [index, position]);
@@ -119,10 +129,6 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
   const bottom = drawnHeight ?? frame.height;
   const chinTop = frame.top(CARD_BOTTOM, 'footer');
   const top = (bottom + chinTop) / 2 - (GROUP_H * s) / 2;
-  // The green chin below the card is drawn here, once for all tabs (the tab screens don't
-  // draw their own), so it stays perfectly still while switching tabs.
-  const cardTop = frame.top(CARD_BOTTOM - CARD_BOTTOM_H, 'footer');
-  const chin = useMemo(() => chinPath(frame.width, 0, s, bottom - cardTop + 2), [frame.width, s, bottom, cardTop]);
 
   return (
     <View
@@ -130,12 +136,6 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
       style={StyleSheet.absoluteFill}
       onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
     >
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: cardTop, bottom: -2 }}>
-        <Svg width={frame.width} height={bottom - cardTop + 2}>
-          <Path d={chin} fill={GREEN} />
-        </Svg>
-      </View>
-
       <View
         pointerEvents="none"
         style={{ position: 'absolute', left: frame.left(BAR.x), top, width: BAR.w * s, height: GROUP_H * s }}

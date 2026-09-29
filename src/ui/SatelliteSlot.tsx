@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 
 import { SatelliteMap } from '@/components/satellite/SatelliteMap';
-import type { MapEvent } from '@/components/satellite/satelliteHtml';
+import type { Insets, MapEvent } from '@/components/satellite/satelliteHtml';
 import { StaticSatellite } from '@/components/satellite/StaticSatellite';
 import type { ToolPress } from '@/components/satellite/useSatellitePage';
 import type { Outline } from '@/lib/app-state';
@@ -33,13 +33,19 @@ type Props = {
   showPin?: boolean;
   /** Fly in from zoomed out when the location arrives (Locate); other maps open right on it. */
   flyIn?: boolean;
-  /** Read-only maps: zoom to fit the outlines with this much room around them (design pts). */
+  /** Read-only maps zoom to fit every outline, with this much room around them (design pts). */
   fitPadding?: number;
   /** Read-only maps: tags on the map, e.g. side lengths. */
   labels?: MapLabel[];
+  /** Interactive maps: open zoomed to fit the outlines, this much room clear on each side (design pts). */
+  fitInsets?: Insets;
 };
 
 const NO_OUTLINES: Outline[] = [];
+/** Room around the lawns on a read-only map (design pts)... */
+const FIT_PADDING = 14;
+/** ...and with side lengths shown: tags on the left/right edges stick out about half their width. */
+export const DIMENSIONS_FIT_PADDING = 26;
 
 /** Live satellite imagery in the spot of the placeholder satellite photo from Figma. */
 export function SatelliteSlot({
@@ -59,8 +65,9 @@ export function SatelliteSlot({
   onEvent,
   showPin = false,
   flyIn = false,
-  fitPadding,
+  fitPadding = FIT_PADDING,
   labels,
+  fitInsets,
 }: Props) {
   const rect = useRect({ x, y, anchor }, w, h);
   const { scale } = useFrame();
@@ -84,7 +91,7 @@ export function SatelliteSlot({
           center={center}
           zoom={zoom}
           outlines={outlines}
-          fitPadding={fitPadding === undefined ? undefined : fitPadding * scale}
+          fitPadding={fitPadding * scale}
           labels={labels}
           labelSize={9 * scale}
         />
@@ -102,6 +109,14 @@ export function SatelliteSlot({
           onEvent={onEvent}
           showPin={showPin}
           flyIn={flyIn}
+          fitInsets={
+            fitInsets && {
+              left: fitInsets.left * scale,
+              top: fitInsets.top * scale,
+              right: fitInsets.right * scale,
+              bottom: fitInsets.bottom * scale,
+            }
+          }
         />
       )}
     </View>

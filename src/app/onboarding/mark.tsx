@@ -1,8 +1,9 @@
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { useAppState } from '@/lib/app-state';
+import { MAX_LAWNS, useAppState } from '@/lib/app-state';
 import type { MapEvent, MapTool } from '@/components/satellite/satelliteHtml';
 import type { ToolPress } from '@/components/satellite/useSatellitePage';
 import { AddressFields } from '@/ui/AddressFields';
@@ -16,6 +17,8 @@ const { common, mark } = ui;
 // Same as Locate: the card is taller than in Figma (shorter green chin), so the content is
 // moved down and spread out by these design-pt amounts. The map tools move with the map.
 const SHIFT = { header: 8, address: 16, cityState: 26, map: 36 };
+/** Room around the lawns when the map opens (design pts): the tools cover the left 50. */
+const MAP_FIT_INSETS = { left: 58, top: 22, right: 22, bottom: 22 };
 
 // Lawnalyze UI (2).zip
 export default function MarkScreen() {
@@ -25,11 +28,16 @@ export default function MarkScreen() {
   const [toolPress, setToolPress] = useState<ToolPress | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [showMarkHint, setShowMarkHint] = useState(false);
+  const [showLimit, setShowLimit] = useState(false);
 
-  const press = (tool: MapTool) => setToolPress({ tool, id: Date.now() });
+  const press = (tool: MapTool) => {
+    Haptics.selectionAsync().catch(() => {});
+    setToolPress({ tool, id: Date.now() });
+  };
   const onMapEvent = (event: MapEvent) => {
     if (event.type === 'outlines') setOutlines(event.outlines);
-    else setDrawing(event.drawing);
+    else if (event.type === 'drawing') setDrawing(event.drawing);
+    else setShowLimit(true);
   };
 
   function markMyLawn() {
@@ -43,7 +51,6 @@ export default function MarkScreen() {
   return (
     <Artboard
       cardBottom={548}
-      footer={common.footerGreen}
       compactChin
       glows={[
         { asset: common.glow, x: 221, y: -148 },
@@ -71,6 +78,8 @@ export default function MarkScreen() {
         outlines={initialOutlines}
         toolPress={toolPress}
         onEvent={onMapEvent}
+        // Open on every marked lawn, clear of the tools along the left edge.
+        fitInsets={MAP_FIT_INSETS}
       />
       {/* Drawing tools: pencil = draw/finish, plus = new lawn area, trash = delete selected area. */}
       {drawing && <ActiveRing x={45} y={246 + SHIFT.map} size={28} />}
@@ -79,9 +88,9 @@ export default function MarkScreen() {
       <Layer asset={mark.toolPill} x={45} y={280 + SHIFT.map} />
       <Layer asset={mark.toolPlus} x={51} y={286 + SHIFT.map} />
       <Layer asset={mark.toolTrash} x={45} y={304 + SHIFT.map} />
-      <Hotspot x={41} y={242 + SHIFT.map} w={36} h={36} label="Draw lawn outline" onPress={() => press('draw')} />
-      <Hotspot x={41} y={280 + SHIFT.map} w={36} h={24} label="Add another lawn area" onPress={() => press('add')} />
-      <Hotspot x={41} y={304 + SHIFT.map} w={36} h={30} label="Delete lawn area" onPress={() => press('delete')} />
+      <Hotspot x={41} y={242 + SHIFT.map} w={36} h={36} label="Draw lawn outline" feedback onPress={() => press('draw')} />
+      <Hotspot x={41} y={280 + SHIFT.map} w={36} h={24} label="Add another lawn area" feedback onPress={() => press('add')} />
+      <Hotspot x={41} y={304 + SHIFT.map} w={36} h={30} label="Delete lawn area" feedback onPress={() => press('delete')} />
 
       <PressableLayer
         asset={mark.btnMarkMyLawn}
@@ -98,6 +107,12 @@ export default function MarkScreen() {
         title="Mark your lawn first"
         message="Tap around the edge of your lawn on the map to outline it."
         onClose={() => setShowMarkHint(false)}
+      />
+      <Dialog
+        visible={showLimit}
+        title={`Up to ${MAX_LAWNS} lawn areas`}
+        message="To mark a different one, tap an area on the map to select it, then delete it with the trash button."
+        onClose={() => setShowLimit(false)}
       />
     </Artboard>
   );

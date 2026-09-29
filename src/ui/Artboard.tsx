@@ -78,12 +78,6 @@ export type Glow = { asset: UiAsset; x: number; y: number };
 type ArtboardProps = {
   /** Design y where the white card's rounded bottom edge ends. */
   cardBottom: number;
-  /**
-   * Green footer layer that sits behind the card's rounded corners. Tab screens leave it
-   * out: the tab bar draws one shared chin for all of them (see TabNav), so it stays put
-   * when switching tabs.
-   */
-  footer?: UiAsset;
   glows: Glow[];
   /** Design y of the green-to-white gradient used on the intro screens. */
   gradientY?: number;
@@ -92,37 +86,21 @@ type ArtboardProps = {
   children: ReactNode;
 };
 
-export function Artboard({ cardBottom, footer, glows, gradientY, compactChin = false, children }: ArtboardProps) {
+export function Artboard({ cardBottom, glows, gradientY, compactChin = false, children }: ArtboardProps) {
   const metrics = useFrameMetrics(compactChin);
-  const { scale, width, height } = metrics;
+  const { width, height } = metrics;
   // On Android the window height can exclude the gesture bar, so measure what's really drawn.
   const [drawnHeight, setDrawnHeight] = useState<number | null>(null);
   const bottom = drawnHeight ?? height;
   const frame: Frame = { ...metrics, chinCenter: (metrics.top(cardBottom, 'footer') + bottom) / 2 };
-  const card = ui.common.cardBottom;
 
   return (
     <FrameContext.Provider value={frame}>
+      {/* See-through: the white page and green chin are drawn once behind every screen (SharedChin). */}
       <View
-        style={[styles.root, !footer && styles.white]}
+        style={styles.root}
         onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
       >
-        {footer && (
-          <>
-            {/* The Figma base layer is plain white. */}
-            <View style={[styles.abs, styles.white, { left: 0, top: 0, width, height }]} />
-            <Image
-              source={footer.source}
-              resizeMode="stretch"
-              style={[styles.abs, { left: 0, top: frame.top(DESIGN_HEIGHT - footer.h, 'footer'), width, bottom: 0 }]}
-            />
-            <Image
-              source={card.source}
-              resizeMode="stretch"
-              style={[styles.abs, { left: 0, top: frame.top(cardBottom - card.h, 'footer'), width, height: card.h * scale }]}
-            />
-          </>
-        )}
         {gradientY !== undefined && (
           // Stretched up to the top of the screen so it also fills the status bar area.
           <Image
@@ -230,17 +208,35 @@ export function PressableLayer({
   );
 }
 
-type HotspotProps = Rect & { w: number; h: number; onPress: () => void; label: string };
+type HotspotProps = Rect & {
+  w: number;
+  h: number;
+  onPress: () => void;
+  label: string;
+  /** Tint the spot while it's pressed (for buttons with no pressed look of their own). */
+  feedback?: boolean;
+};
 
 /** Invisible touch target over part of a layer (e.g. one label in the nav bar). */
-export function Hotspot({ x, y, anchor, w, h, onPress, label }: HotspotProps) {
+export function Hotspot({ x, y, anchor, w, h, onPress, label, feedback = false }: HotspotProps) {
   const rect = useRect({ x, y, anchor }, w, h);
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={rect} />;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [
+        rect,
+        feedback && pressed && { backgroundColor: PRESSED_TINT, borderRadius: Math.min(rect.width, rect.height) / 2 },
+      ]}
+    />
+  );
 }
 
+const PRESSED_TINT = 'rgba(47, 107, 255, 0.22)';
+
 const styles = StyleSheet.create({
-  root: { flex: 1, overflow: 'hidden', backgroundColor: GREEN },
-  white: { backgroundColor: '#fff' },
+  root: { flex: 1, overflow: 'hidden' },
   noTouch: { pointerEvents: 'none' },
   flip: { transform: [{ scaleY: -1 }] },
   abs: { position: 'absolute' },

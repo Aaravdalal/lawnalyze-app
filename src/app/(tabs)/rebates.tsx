@@ -45,7 +45,7 @@ export default function RebatesScreen() {
         { asset: common.glow, x: -45, y: 192 },
       ]}
     >
-      <Layer asset={common.logoSmall} x={23} y={23} />
+      <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <Layer asset={art.titleRebates} x={21} y={76} />
       <Layer asset={art.labelBestChoice} x={28} y={103} />

@@ -11,7 +11,7 @@ import { Artboard, TAB_CHIN_DROP, Layer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
 import { DragSections, type SectionFrame } from '@/ui/DragSections';
-import { SatelliteSlot } from '@/ui/SatelliteSlot';
+import { DIMENSIONS_FIT_PADDING, SatelliteSlot } from '@/ui/SatelliteSlot';
 import { SwapRow } from '@/ui/SwapRow';
 import { WeatherWidget } from '@/ui/WeatherWidget';
 
@@ -49,7 +49,7 @@ export default function HomeScreen() {
         { asset: common.glow, x: -110, y: -107 },
       ]}
     >
-      <Layer asset={common.logoSmall} x={23} y={23} />
+      <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <DragSections
         frames={SECTIONS}
@@ -71,7 +71,7 @@ export default function HomeScreen() {
           lawns: (
             <>
               {units === 'metric' ? (
-                <DesignText x={24} y={233} w={230} h={22} size={16} weight="medium">
+                <DesignText x={24} y={233} w={230} h={22} size={15.5} weight="medium">
                   Area of your lawn(s):
                 </DesignText>
               ) : (
@@ -95,8 +95,8 @@ export default function HomeScreen() {
                 center={lawn}
                 zoom={18}
                 outlines={outlines}
-                // Show dimensions (Settings): zoom in on the lawn so its measurements are readable.
-                fitPadding={showDimensions ? 14 : undefined}
+                // Show dimensions (Settings): more room around the lawns for the side lengths.
+                fitPadding={showDimensions ? DIMENSIONS_FIT_PADDING : undefined}
                 labels={labels}
               />
             </>
@@ -156,7 +156,8 @@ function LawnBox({ y, squareFeet, units, emptyText }: LawnBoxProps) {
             {formatAreaNumber(squareFeet, units)}
           </DesignText>
           {units === 'metric' ? (
-            <DesignText x={36} y={y + 41} w={100} h={17} size={14.5}>
+            // Same type as the "square feet" export (15.5pt medium); it needs almost the box's full width.
+            <DesignText x={35} y={y + 40} w={108} h={19} size={15.5} weight="medium" fit={false}>
               square meters
             </DesignText>
           ) : (

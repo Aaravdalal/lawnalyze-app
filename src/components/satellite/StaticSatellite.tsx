@@ -6,6 +6,7 @@ import Svg, { Polygon } from 'react-native-svg';
 import type { Outline } from '@/lib/app-state';
 import type { MapLabel } from '@/lib/dimensions';
 import type { LatLng } from '@/lib/location';
+import { textWidthEm } from '@/ui/DesignText';
 
 // A still satellite view drawn natively: the Google satellite tiles laid out as images, with
 // the lawn outlines and any labels on top. Used for the maps you only look at (Home, Settings,
@@ -16,6 +17,8 @@ const TILE = 256; // tile size in dp, as on the Leaflet maps (512px scale=2 tile
 const MAX_TILE_ZOOM = 20;
 const BLUE = '#2F6BFF'; // same outline color as the Leaflet maps
 const LABEL_BOX = 160; // room (dp) a label can center itself in
+/** Closest zoom when fitting a small lawn (tiles stop at 20, so 21 is them drawn at double size). */
+const MAX_FIT_ZOOM = 21;
 const tileUrl = (x: number, y: number, z: number, retry: number) =>
   `https://mt${(x + y) % 4}.google.com/vt/lyrs=y&x=${x}&y=${y}&z=${z}&scale=2${retry ? `&retry=${retry}` : ''}`;
 
@@ -54,7 +57,7 @@ export function StaticSatellite({ width, height, center, zoom, outlines, fitPadd
         (width - 2 * fitPadding) / Math.max(1e-9, maxX - minX),
         (height - 2 * fitPadding) / Math.max(1e-9, maxY - minY),
       );
-      return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, zoom: Math.min(21, Math.max(3, Math.log2(fit))) };
+      return { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, zoom: Math.min(MAX_FIT_ZOOM, Math.max(3, Math.log2(fit))) };
     }
     if (!center) return null;
     const c = project(center);
@@ -89,6 +92,8 @@ export function StaticSatellite({ width, height, center, zoom, outlines, fitPadd
     }
   }
 
+  const placed = placeLabels(labels, toScreen, labelSize, width, height);
+
   return (
     <View pointerEvents="none" style={{ width, height, overflow: 'hidden' }}>
       {tiles.map((t) => (
@@ -111,8 +116,7 @@ export function StaticSatellite({ width, height, center, zoom, outlines, fitPadd
           />
         ))}
       </Svg>
-      {labels.map((label, i) => {
-        const at = toScreen(label);
+      {placed.map(({ label, at }, i) => {
         return (
           <View key={i} style={[styles.labelSpot, { left: at.x - LABEL_BOX / 2, top: at.y - LABEL_BOX / 4 }]}>
             <Text
@@ -133,6 +137,46 @@ export function StaticSatellite({ width, height, center, zoom, outlines, fitPadd
     </View>
   );
 }
+
+type Point = { x: number; y: number };
+
+/**
+ * Which labels to draw, so none overlap or hang off the edge: side lengths first, longest side
+ * first, then each lawn's area where there's still room. (With two lawns, or a small one, not
+ * every tag fits; the ones that would pile up are left out.)
+ */
+function placeLabels(labels: MapLabel[], toScreen: (p: LatLng) => Point, size: number, width: number, height: number) {
+  const gap = size * 0.25;
+  const boxHeight = size * 1.45;
+  const candidates = labels.map((label) => {
+    const at = toScreen(label);
+    const sideLength = label.kind === 'side' ? distance(toScreen(label.ends[0]), toScreen(label.ends[1])) : Infinity;
+    // Medium weight runs a little wider than the regular-weight estimate; plus the side padding.
+    const w = textWidthEm(label.text) * size * 1.06 + size;
+    return { label, at, sideLength, w };
+  });
+  const order = [
+    ...candidates.filter((c) => c.label.kind === 'side').sort((a, b) => b.sideLength - a.sideLength),
+    ...candidates.filter((c) => c.label.kind === 'area'),
+  ];
+  const taken: { left: number; top: number; right: number; bottom: number }[] = [];
+  const result: { label: MapLabel; at: Point }[] = [];
+  for (const { label, at, sideLength, w } of order) {
+    // A side too short to read a tag against (e.g. an extra corner added right next to another).
+    if (sideLength < boxHeight * 1.5) continue;
+    const box = { left: at.x - w / 2, top: at.y - boxHeight / 2, right: at.x + w / 2, bottom: at.y + boxHeight / 2 };
+    if (box.left < 2 || box.top < 2 || box.right > width - 2 || box.bottom > height - 2) continue;
+    const overlaps = taken.some(
+      (o) => box.left < o.right + gap && box.right > o.left - gap && box.top < o.bottom + gap && box.bottom > o.top - gap,
+    );
+    if (overlaps) continue;
+    taken.push(box);
+    result.push({ label, at });
+  }
+  return result;
+}
+
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /** One map tile; retries a few times if it fails to load (e.g. a dropped request). */
 const Tile = memo(function Tile({ x, y, z, left, top, size }: { x: number; y: number; z: number; left: number; top: number; size: number }) {

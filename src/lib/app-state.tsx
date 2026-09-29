@@ -9,9 +9,9 @@ export type Units = 'customary' | 'metric';
 /** The three sections of the Home screen, which can be put in any order (Settings > Edit Placement). */
 export type HomeSection = 'weather' | 'lawns' | 'cost';
 export const HOME_SECTIONS: HomeSection[] = ['weather', 'lawns', 'cost'];
-/** The two sections of the Usage screen, which can be reordered. */
-export type UsageSection = 'usage' | 'cost';
-export const USAGE_SECTIONS: UsageSection[] = ['usage', 'cost'];
+/** The three sections of the Usage screen, which can be put in any order the same way. */
+export type UsageSection = 'water' | 'comparison' | 'cost';
+export const USAGE_SECTIONS: UsageSection[] = ['water', 'comparison', 'cost'];
 export type Preferences = {
   units: Units;
   weatherAlerts: boolean;
@@ -22,6 +22,8 @@ export type Preferences = {
   /** Usage's sections, top to bottom. */
   usageOrder: UsageSection[];
 };
+/** Most lawn areas a property can have marked (Home has a box for each). */
+export const MAX_LAWNS = 2;
 /** A marked lawn area: its corner points in order. */
 export type Outline = LatLng[];
 
@@ -57,6 +59,10 @@ type AppState = StoredState & {
   setPreferences: (preferences: Preferences) => void;
 };
 
+/** A saved order that still has exactly these sections (not one from an older version). */
+const isOrderOf = <K,>(order: K[], sections: K[]) =>
+  Array.isArray(order) && order.length === sections.length && sections.every((s) => order.includes(s));
+
 const AppStateContext = createContext<AppState | null>(null);
 
 export function AppStateProvider({ children }: { children: ReactNode }) {
@@ -72,19 +78,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         const preferences = { ...INITIAL_STATE.preferences, ...stored.preferences };
         // The second units option used to be "imperial" (only the gallon differed); it's metric now.
         if ((preferences.units as string) === 'imperial') preferences.units = 'metric';
-        const order = preferences.homeOrder;
-        if (order.length !== HOME_SECTIONS.length || !HOME_SECTIONS.every((s) => order.includes(s))) {
-          preferences.homeOrder = HOME_SECTIONS;
-        }
-        const usageOrder = preferences.usageOrder;
-        if (
-          !usageOrder ||
-          usageOrder.length !== USAGE_SECTIONS.length ||
-          !USAGE_SECTIONS.every((s) => usageOrder.includes(s))
-        ) {
-          preferences.usageOrder = USAGE_SECTIONS;
-        }
-        setState({ ...stored, preferences });
+        if (!isOrderOf(preferences.homeOrder, HOME_SECTIONS)) preferences.homeOrder = HOME_SECTIONS;
+        if (!isOrderOf(preferences.usageOrder, USAGE_SECTIONS)) preferences.usageOrder = USAGE_SECTIONS;
+        // Saved before there was a limit: keep the first ones.
+        setState({ ...stored, outlines: stored.outlines.slice(0, MAX_LAWNS), preferences });
       })
       .catch(() => {
         // Unreadable storage: start fresh rather than blocking the app.

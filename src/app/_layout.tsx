@@ -4,18 +4,23 @@ import {
   GoogleSansFlex_500Medium,
   useFonts,
 } from '@expo-google-fonts/google-sans-flex';
-import { Stack } from 'expo-router';
+import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
+import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppStateProvider, useAppState } from '@/lib/app-state';
 import { prefetchClimate, useLawnEstimate } from '@/lib/estimate';
 import { prefetchWeather } from '@/lib/weather';
 import { requestWeatherAlertPermission, syncWeatherAlerts, weatherAlertsSupported } from '@/lib/weather-alerts';
+import { SharedChin } from '@/ui/SharedChin';
 
 SplashScreen.preventAutoHideAsync();
+
+// Screens are see-through, so the page and green chin drawn behind them (SharedChin) show.
+const THEME = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
 
 export default function RootLayout() {
   return (
@@ -52,10 +57,16 @@ function RootNavigator() {
   if (!loaded) return null;
 
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
-    </>
+      {/* One green chin for every screen: it stays put while screens fade in and out. */}
+      <SharedChin />
+      <ThemeProvider value={THEME}>
+        <Stack
+          screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }}
+        />
+      </ThemeProvider>
+    </View>
   );
 }
 

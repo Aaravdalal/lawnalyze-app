@@ -29,7 +29,6 @@ export default function FootageScreen() {
   return (
     <Artboard
       cardBottom={548}
-      footer={common.footerGreen}
       compactChin
       glows={[
         { asset: common.glow, x: 18, y: 48 },

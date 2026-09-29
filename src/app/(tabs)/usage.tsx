@@ -13,8 +13,9 @@ const { common, usage } = ui;
 
 /** Each section's top and height in the Figma layout (design pts). */
 const SECTIONS: Record<UsageSection, SectionFrame> = {
-  usage: { top: 84, h: 142 }, // "Water Usage" to bottom of comparison box
-  cost: { top: 432, h: 117 }, // "Water Cost" to bottom of cost boxes
+  water: { top: 84, h: 136 }, // "Water Usage" to the bottom of the week/year boxes
+  comparison: { top: 236, h: 180 }, // "Comparison to national average" to the bottom of the drop box
+  cost: { top: 432, h: 117 }, // "Water Cost" to the bottom of the cost boxes
 };
 
 // The "Great" in the Figma export is this green; the other ratings shade toward red.
@@ -24,19 +25,12 @@ const RATING_COLORS: Record<Rating, string> = {
   Bad: '#EF6B6B',
 };
 
-/**
- * How full the drop is: half full at the national average, emptier below it, and filling
- * toward the top (never quite full) the further above it the lawn is.
- */
-function dropLevel(percentOfNational: number): number {
-  const ratio = percentOfNational / 100;
-  const level = ratio <= 1 ? ratio / 2 : 1 - 0.5 / ratio;
-  return Math.min(0.94, Math.max(0.06, level));
-}
+/** How full the drop is: the percentage of the national average (20% → a fifth full), full at 100% or more. */
+const dropLevel = (percentOfNational: number) => Math.min(1, Math.max(0, percentOfNational / 100));
 
 // Lawnalyze UI (5)/(18). Estimated water use and cost for the marked lawn, weather-adjusted
 // (see lib/estimate.ts). Boxes stay empty until a lawn area is marked and the data loads.
-// Press and hold a section to drag it somewhere else.
+// Press and hold a section to drag it somewhere else (Settings > Reset Placement puts them back).
 export default function UsageScreen() {
   const { lawn, outlines, preferences, setPreferences } = useAppState();
   const estimate = useLawnEstimate(lawn, outlines);
@@ -53,7 +47,7 @@ export default function UsageScreen() {
         { asset: common.glow, x: 62, y: 135 },
       ]}
     >
-      <Layer asset={common.logoSmall} x={23} y={23} />
+      <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <DragSections
         frames={SECTIONS}
@@ -61,7 +55,7 @@ export default function UsageScreen() {
         onReorder={(usageOrder) => setPreferences({ ...preferences, usageOrder })}
       >
         {{
-          usage: (
+          water: (
             <>
               <Layer asset={usage.titleWaterUsage} x={22} y={84} />
               <Layer asset={usage.textUnitsHint} x={33} y={104} />
@@ -96,7 +90,10 @@ export default function UsageScreen() {
                   },
                 ]}
               />
-
+            </>
+          ),
+          comparison: (
+            <>
               <Layer asset={usage.titleComparison} x={17} y={236} />
               <Layer asset={usage.boxDrop} x={24} y={264} />
               {estimate ? (
@@ -112,10 +109,11 @@ export default function UsageScreen() {
                   <DesignText x={211} y={300} w={95} h={26} size={21} color={RATING_COLORS[estimate.rating]}>
                     {estimate.rating}
                   </DesignText>
-                  <DesignText x={209} y={357} w={95} h={28} size={23}>
+                  <DesignText x={203} y={350} w={102} h={34} size={30}>
                     {formatPercent(estimate.percentOfNational)}
                   </DesignText>
-                  <DesignText x={209} y={385} w={100} h={14} size={10}>
+                  {/* As big as fits the box's width with a margin (it was 10pt). */}
+                  <DesignText x={203} y={386} w={101} h={17} size={11.5} fit={false}>
                     of national average
                   </DesignText>
                 </>

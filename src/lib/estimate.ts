@@ -46,15 +46,8 @@ export const MM_PER_INCH = 25.4;
  * utilities don't charge sewer fees on outdoor watering.
  */
 const PRICE_PER_GALLON = 7.74 / 1000;
-/**
- * National average water per square foot of lawn, per year (≈ 4.0 gal/sq ft, 163 L/m²):
- * - the average household's outdoor water: "The average American family uses more than 300
- *   gallons of water per day at home", and "outdoor water use accounts for 30 percent"
- *   (epa.gov/watersense/how-we-use-water) → 90 gallons a day;
- * - spread over the median US lawn, 8,186 sq ft (satellite measurements of 1,017 US homes,
- *   measurelawn.com/average-lawn-size, 2026).
- */
-const NATIONAL_GALLONS_PER_SQFT_YEAR = (90 * 365) / 8186;
+/** The national average lawn's water per week (US gallons). */
+const NATIONAL_GALLONS_PER_WEEK = 3000;
 
 type Day = { et0: number; rain: number; meanTempC: number };
 
@@ -73,7 +66,7 @@ export type Estimate = {
   yearlyGallons: number;
   weeklyCost: number;
   yearlyCost: number;
-  /** This lawn's water per square foot vs the national average lawn's (100 = average). */
+  /** This lawn's water this week as a percentage of the national average lawn's week (0–100). */
   percentOfNational: number;
   rating: Rating;
   grass: 'cool-season' | 'warm-season';
@@ -114,10 +107,10 @@ function weeklyNeedMm(lastWeek: Day[], nextWeek: Day[], kc: number): number {
   return Math.max(0, need - rainCredit);
 }
 
-/** At or under the national average is Great; up to twice it, Fair; more, Bad. */
+/** Up to half the national average is Great; up to 80%, Fair; more, Bad. */
 function ratingFor(percent: number): Rating {
-  if (percent <= 100) return 'Great';
-  if (percent <= 200) return 'Fair';
+  if (percent <= 50) return 'Great';
+  if (percent <= 80) return 'Fair';
   return 'Bad';
 }
 
@@ -131,9 +124,8 @@ export function estimateLawn(squareFeet: number, climate: Climate): Estimate {
 
   const weeklyUs = toUsGallons(weeklyNeedMm(climate.lastWeek, climate.nextWeek, kc));
   const yearlyUs = toUsGallons(yearlyNeedMm(climate.lastYear, kc));
-  // Baseline: what an average American lawn uses per year
-  const baselineYearlyUs = NATIONAL_GALLONS_PER_SQFT_YEAR * squareFeet;
-  const percentOfNational = (yearlyUs / baselineYearlyUs) * 100;
+  // This week's water as a percentage of the national average lawn's week, at most 100%.
+  const percentOfNational = Math.min(100, (weeklyUs / NATIONAL_GALLONS_PER_WEEK) * 100);
 
   return {
     weeklyGallons: weeklyUs,

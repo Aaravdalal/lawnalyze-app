@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { HOME_SECTIONS, useAppState, type Units } from '@/lib/app-state';
+import { HOME_SECTIONS, USAGE_SECTIONS, useAppState, type Units } from '@/lib/app-state';
 import { dimensionLabels } from '@/lib/dimensions';
 import { KC_COOL_SEASON, useLawnEstimate } from '@/lib/estimate';
 import { requestWeatherAlertPermission, sendWeatherAlertNow, weatherAlertsSupported } from '@/lib/weather-alerts';
@@ -10,7 +10,7 @@ import { Artboard, GREEN, TAB_CHIN_DROP, Hotspot, Layer, PressableLayer, useFram
 import { ui, type UiAsset } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
 import { Dialog } from '@/ui/Dialog';
-import { SatelliteSlot } from '@/ui/SatelliteSlot';
+import { DIMENSIONS_FIT_PADDING, SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, settings } = ui;
 
@@ -73,7 +73,7 @@ export default function SettingsScreen() {
         { asset: common.glowTall, x: -17, y: 79 },
       ]}
     >
-      <Layer asset={common.logoSmall} x={24} y={23} />
+      <Layer asset={common.logoSmall} x={24} y={26.5} />
       <Layer asset={settings.titleSettings} x={24} y={95} />
 
       <Layer asset={settings.boxPanel} x={23} y={130} />
@@ -81,7 +81,7 @@ export default function SettingsScreen() {
       <OptionRow
         y={170}
         position="top"
-        text={settings.textCustomary}
+        text="Customary System"
         selected={preferences.units === 'customary'}
         onPress={() => setUnits('customary')}
         label="US Customary System"
@@ -124,8 +124,8 @@ export default function SettingsScreen() {
         center={lawn}
         zoom={18}
         outlines={outlines}
-        // With dimensions on, zoom in on the lawn so its measurements are readable.
-        fitPadding={showDimensions ? 14 : undefined}
+        // With dimensions on, more room around the lawns for the side lengths on their edges.
+        fitPadding={showDimensions ? DIMENSIONS_FIT_PADDING : undefined}
         labels={labels}
       />
 
@@ -147,10 +147,11 @@ export default function SettingsScreen() {
       <ResetPlacementButton
         y={y(489)}
         onPress={() => {
-          setPreferences({ ...preferences, homeOrder: HOME_SECTIONS });
+          setPreferences({ ...preferences, homeOrder: HOME_SECTIONS, usageOrder: USAGE_SECTIONS });
           setMessage({
             title: 'Placement reset',
-            message: 'Home is back to its original layout. To move things around, press and hold a section on Home, then drag it.',
+            message:
+              'Home and Usage are back to their original layouts. To move things around, press and hold a section, then drag it.',
           });
         }}
       />
@@ -186,8 +187,8 @@ function OptionRow({ y, position, text, selected, onPress, label }: OptionRowPro
     <>
       <Layer asset={selected ? settings.rowSelected : settings.rowUnselected} x={34} y={y} flip={flip} />
       {typeof text === 'string' ? (
-        // Live text in the Figma row font, where there's no export for the wording.
-        <DesignText x={42} y={y + 7} w={200} h={17} size={14} weight="medium">
+        // Live text in the Figma row font (both units rows use it, so they always match).
+        <DesignText x={42} y={y + 7} w={200} h={17} size={12.5} weight="medium">
           {text}
         </DesignText>
       ) : (

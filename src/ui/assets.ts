@@ -22,8 +22,8 @@ export const ui = {
     labelAddress: { source: require('../../assets/ui/common/label-address.png'), w: 52, h: 10 },
     labelCity: { source: require('../../assets/ui/common/label-city.png'), w: 25, h: 13 },
     labelState: { source: require('../../assets/ui/common/label-state.png'), w: 33, h: 10 },
-    logoSmall: { source: require('../../assets/ui/common/logo-small.png'), w: 171, h: 49 },
-    logo: { source: require('../../assets/ui/common/logo.png'), w: 309, h: 88 },
+    logoSmall: { source: require('../../assets/ui/common/logo-small.png'), w: 156, h: 29.7 },
+    logo: { source: require('../../assets/ui/common/logo.png'), w: 280.5, h: 53.4 },
     navDot: { source: require('../../assets/ui/common/nav-dot.png'), w: 7, h: 7 },
   },
   footage: {
@@ -83,7 +83,6 @@ export const ui = {
     rowSelected: { source: require('../../assets/ui/settings/row-selected.png'), w: 272, h: 30 },
     rowShowDimensions: { source: require('../../assets/ui/settings/row-show-dimensions.png'), w: 113, h: 30 },
     rowUnselected: { source: require('../../assets/ui/settings/row-unselected.png'), w: 272, h: 30 },
-    textCustomary: { source: require('../../assets/ui/settings/text-customary.png'), w: 110, h: 12 },
     textEditLawn: { source: require('../../assets/ui/settings/text-edit-lawn.png'), w: 51, h: 9 },
     textNoThanks: { source: require('../../assets/ui/settings/text-no-thanks.png'), w: 58, h: 9 },
     textShowDimensions: { source: require('../../assets/ui/settings/text-show-dimensions.png'), w: 94, h: 9 },

@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/lib/app-state';
 import { geocodeAddress, reverseGeocode, type AddressQuery } from '@/lib/geocode';
@@ -9,6 +9,7 @@ import { AddressFields } from '@/ui/AddressFields';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer, useFrame } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { Dialog } from '@/ui/Dialog';
+import { LoaderMorphing } from '@/ui/LoaderMorphing';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, locate } = ui;
@@ -106,7 +107,6 @@ export default function LocateScreen() {
   return (
     <Artboard
       cardBottom={548}
-      footer={common.footerGreen}
       compactChin
       glows={[
         { asset: common.glow, x: -169, y: 0 },
@@ -151,11 +151,16 @@ export default function LocateScreen() {
   );
 }
 
+/** While the address is being looked up: the white morphing loader, in the button's right end. */
 function ButtonSpinner() {
   const { scale } = useFrame();
-  return <ActivityIndicator color="#fff" style={[styles.spinner, { right: 18 * scale }]} />;
+  return (
+    <View pointerEvents="none" style={[styles.spinner, { right: 16 * scale }]}>
+      <LoaderMorphing size={17 * scale} color="#fff" />
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  spinner: { position: 'absolute', top: 0, bottom: 0 },
+  spinner: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center' },
 });

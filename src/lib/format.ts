@@ -8,4 +8,4 @@ export function formatMoney(dollars: number): string {
 /** Whole dollars, e.g. yearly totals: "$362", "$1,245". */
 export const formatDollars = (dollars: number) => `$${withCommas(dollars)}`;
 
-export const formatPercent = (percent: number) => `${Math.round(percent)}%`;
+export const formatPercent = (percent: number) => `${Math.round(percent).toLocaleString('en-US')}%`;
