@@ -4,7 +4,7 @@ import { StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/lib/app-state';
 import { geocodeAddress, reverseGeocode, type AddressQuery } from '@/lib/geocode';
-import { getDeviceLocation, type LatLng } from '@/lib/location';
+import { distanceMeters, getDeviceLocation, type LatLng } from '@/lib/location';
 import { AddressFields } from '@/ui/AddressFields';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer, useFrame } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
@@ -19,6 +19,10 @@ const { common, locate } = ui;
 const SHIFT = { header: 8, address: 16, cityState: 26, map: 36 };
 
 type Located = { query: AddressQuery; spot: LatLng };
+
+const EMPTY_QUERY: AddressQuery = { address: '', city: '', state: '' };
+/** Editing a saved lawn from closer than this (meters), you're at it: keep its saved address. */
+const AT_SAVED_LAWN_M = 150;
 
 const trimmed = (form: AddressQuery): AddressQuery => ({
   address: form.address.trim(),
@@ -39,10 +43,10 @@ export default function LocateScreen() {
     city: lawn?.city ?? '',
     state: lawn?.state ?? '',
   });
-  // The address the map is showing (with its blue marker), once one is known.
-  const [located, setLocated] = useState<Located | null>(
-    lawn ? { query: { address: lawn.address, city: lawn.city, state: lawn.state }, spot: lawn } : null,
-  );
+  // The address the map is showing (with its blue marker), once one is known. Even with a saved
+  // lawn it starts empty: the map waits to learn where the phone is, then flies just once, to
+  // wherever it should be (rather than to the saved lawn and then on to the phone).
+  const [located, setLocated] = useState<Located | null>(null);
   const [searching, setSearching] = useState(false);
   // A problem finding the address, shown in the app's rounded dialog.
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
@@ -53,25 +57,39 @@ export default function LocateScreen() {
     formRef.current = form;
   }, [form]);
 
-  // With location permission, find the user's house and fill in the form for them.
-  // Without it, the user types their address and taps Find My Lawn.
+  // With location permission, go to where the phone is and fill in that address. Editing a
+  // saved lawn, that happens only if you're somewhere else: standing at the lawn, its saved
+  // address stays. Without permission, the user types their address and taps Find My Lawn.
+  const [savedLawn] = useState(lawn);
   useEffect(() => {
-    if (lawn) return; // Editing an existing lawn: keep its saved address.
     let active = true;
+    const opened = trimmed(formRef.current);
+    // Don't overwrite anything the user has typed since the screen opened.
+    const untouched = () => sameQuery(trimmed(formRef.current), opened);
     (async () => {
       const spot = await getDeviceLocation();
-      if (!active || !spot) return;
-      setLocated({ query: trimmed(formRef.current), spot });
+      if (!active) return;
+      // No location, the user is typing a different address, or they're at the saved lawn:
+      // show the saved lawn (if any).
+      if (!spot || !untouched() || (savedLawn && distanceMeters(spot, savedLawn) < AT_SAVED_LAWN_M)) {
+        if (savedLawn) {
+          const { address, city, state } = savedLawn;
+          setLocated((current) => current ?? { query: { address, city, state }, spot: savedLawn });
+        }
+        return;
+      }
+      // The map goes there right away; the address follows once it's looked up. (Until then
+      // the boxes may still show the saved address, which doesn't match this spot.)
+      setLocated({ query: savedLawn ? EMPTY_QUERY : opened, spot });
       const address = await reverseGeocode(spot).catch(() => null);
-      // Don't overwrite anything the user has started typing.
-      if (!active || !address || Object.values(trimmed(formRef.current)).some(Boolean)) return;
+      if (!active || !address || !untouched()) return;
       setForm(address);
       setLocated({ query: address, spot });
     })();
     return () => {
       active = false;
     };
-  }, [lawn]);
+  }, [savedLawn]);
 
   async function findMyLawn() {
     if (searching) return;
