@@ -53,6 +53,13 @@ type Props = BottomTabBarProps & {
   drag?: Animated.AnimatedAddition<number>;
   /** ...and how wide they are: a full width's drag is one tab along. */
   pageWidth?: number;
+  /**
+   * Whether the tab just changed because a swipe was let go (asking resets it). If so the pill,
+   * already carried along by the drag, goes the rest of the way with the screens' slide.
+   */
+  takeSwiped?: () => boolean;
+  /** The screens' slide, for the above. */
+  swipeSlide?: { duration: number; easing: (t: number) => number };
 };
 
 /**
@@ -60,7 +67,7 @@ type Props = BottomTabBarProps & {
  * (and the pills beside it follow), along with the dot underneath. Mid-swipe, the pill moves
  * along with the screens.
  */
-export function TabNav({ state, navigation, drag, pageWidth }: Props) {
+export function TabNav({ state, navigation, drag, pageWidth, takeSwiped, swipeSlide }: Props) {
   const frame = useFrameMetrics(TAB_CHIN_DROP);
   const s = frame.scale;
   const index = state.index;
@@ -111,6 +118,13 @@ export function TabNav({ state, navigation, drag, pageWidth }: Props) {
   useEffect(() => {
     const jump = Math.abs(index - previousIndex.current);
     previousIndex.current = index;
+    // After a swipe the drag has already brought the pill most of the way. The drag now eases
+    // back to 0 on the screens' slide, so moving the pill on the same curve keeps the two
+    // adding up to a smooth glide (the bouncy spring would pull it back, then overshoot).
+    if (takeSwiped?.() && swipeSlide) {
+      Animated.timing(position, { toValue: index, ...swipeSlide, useNativeDriver: true }).start();
+      return;
+    }
     // Starts from wherever the pill is now, so quick taps just redirect it.
     Animated.spring(position, {
       toValue: index,
@@ -118,6 +132,8 @@ export function TabNav({ state, navigation, drag, pageWidth }: Props) {
       damping: jump >= TABS.length - 1 ? LONG_JUMP_DAMPING : BOUNCE.damping,
       useNativeDriver: true,
     }).start();
+    // Only a tab change restarts it (the other two never change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [index, position]);
 
   const pillH = BAR.h * s;

@@ -22,6 +22,14 @@ const GLOW = { rise: 380, hold: 650, fade: 1100, stagger: 90 };
  */
 const REACH = { min: 0.25, max: 1 };
 const DRIFT_MS = { min: 600, max: 1500 };
+/**
+ * A box being typed in surges up as above, then settles: the tongues only stir a little, slowly
+ * (CALM), until a key is pressed. Each key livens them up (LIVELY: quick, deep, wide swings) for
+ * STIR_MS, so they keep moving a lot while typing goes on, and settle again once it stops.
+ */
+const CALM = { reach: { min: 0.3, max: 0.45 }, sway: 0.2, ms: { min: 1600, max: 2600 } };
+const LIVELY = { ms: { min: 280, max: 650 } };
+const STIR_MS = 700;
 /** Tongues along the top and bottom edges are this many box-heights apart. */
 const TONGUE_SPACING = 0.9;
 /** The glow is all GREEN (#9EF9B4): the tongues are drawn in it, and the rim's softest light is it, a little see-through. */
@@ -145,7 +153,7 @@ function Field({ box, x, y, inputRef, onChangeText, glow: fills, glowDelay, sear
   const glow = useMemo(() => createGlow(slots.length), [slots.length]);
   useEffect(() => () => glow.stop(), [glow]);
   useEffect(() => {
-    glow.hold(typing || searching, typing ? 0 : glowDelay);
+    glow.hold(typing || searching, typing ? 0 : glowDelay, typing && !searching);
   }, [glow, typing, searching, glowDelay]);
   useEffect(() => {
     if (fills) glow.flash(glowDelay);
@@ -204,7 +212,13 @@ function Field({ box, x, y, inputRef, onChangeText, glow: fills, glowDelay, sear
         ref={inputRef}
         {...inputProps}
         editable={!!onChangeText}
-        onChangeText={onChangeText}
+        onChangeText={
+          onChangeText &&
+          ((text) => {
+            glow.stir();
+            onChangeText(text);
+          })
+        }
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
         autoCorrect={false}
@@ -275,6 +289,9 @@ function createGlow(tongueCount: number) {
   let flashing = false;
   let up = false;
   let upAt = 0;
+  // Held by a box being typed in: the tongues settle down between keys (see CALM).
+  let calm = false;
+  let stirredUntil = 0;
   // Changes each time the glow comes up or starts to go, which ends the drifting from before.
   let run = 0;
   let flashDone: ReturnType<typeof setTimeout> | undefined;
@@ -282,11 +299,25 @@ function createGlow(tongueCount: number) {
 
   const animate = (value: Animated.Value, toValue: number, duration: number, easing: (t: number) => number, delay = 0) =>
     Animated.timing(value, { toValue, duration, easing, delay, useNativeDriver });
+  const stirred = () => Date.now() < stirredUntil;
 
   function drift(t: Tongue, id: number) {
-    const duration = between(DRIFT_MS.min, DRIFT_MS.max);
-    animate(t.sway, between(-1, 1), duration, SWAY).start();
-    animate(t.reach, randomReach(), duration, SWAY).start(({ finished }) => {
+    let duration: number, reach: number, sway: number;
+    if (!calm) {
+      duration = between(DRIFT_MS.min, DRIFT_MS.max);
+      reach = randomReach();
+      sway = between(-1, 1);
+    } else if (stirred()) {
+      duration = between(LIVELY.ms.min, LIVELY.ms.max);
+      reach = between(REACH.min, REACH.max);
+      sway = between(-1, 1);
+    } else {
+      duration = between(CALM.ms.min, CALM.ms.max);
+      reach = between(CALM.reach.min, CALM.reach.max);
+      sway = between(-CALM.sway, CALM.sway);
+    }
+    animate(t.sway, sway, duration, SWAY).start();
+    animate(t.reach, reach, duration, SWAY).start(({ finished }) => {
       if (finished && id === run) drift(t, id);
     });
   }
@@ -326,8 +357,9 @@ function createGlow(tongueCount: number) {
     level,
     tongues,
     /** Keeps the glow up (coming up after `delay` ms), or lets it go. */
-    hold(on: boolean, delay: number) {
+    hold(on: boolean, delay: number, settle = false) {
       held = on;
+      calm = on && settle;
       if (on) comeUp(delay);
       else if (!flashing) goDown();
     },
@@ -341,11 +373,21 @@ function createGlow(tongueCount: number) {
         if (!held) goDown();
       }, delay + GLOW.rise + GLOW.hold);
     },
+    /** A key was pressed: livens the tongues up for a moment (see STIR_MS). */
+    stir() {
+      const was = stirred();
+      stirredUntil = Date.now() + STIR_MS;
+      // Already lively, or still surging up: the drifting picks it up as it goes.
+      if (was || !up || !calm || Date.now() < upAt + GLOW.rise) return;
+      const id = ++run;
+      for (const t of tongues) drift(t, id);
+    },
     stop() {
       clearTimeout(flashDone);
       clearTimeout(fadeLater);
       run++;
-      held = flashing = up = false;
+      held = flashing = up = calm = false;
+      stirredUntil = 0;
       level.stopAnimation();
       level.setValue(0);
       for (const t of tongues) {

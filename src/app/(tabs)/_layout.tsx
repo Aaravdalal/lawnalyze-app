@@ -116,6 +116,13 @@ export default function TabsLayout() {
   // A swipe let go toward another tab, sliding on until the navigator's own slide takes over.
   const handoff = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(handoff.current), []);
+  // The next tab change comes from a swipe (the nav bar's pill then slides with the screens).
+  const swiped = useRef(false);
+  const takeSwiped = useCallback(() => {
+    const was = swiped.current;
+    swiped.current = false;
+    return was;
+  }, []);
 
   // The tab showing, for the glows behind the screens: moves with the screens' slide, and
   // fractionally with a swipe.
@@ -150,11 +157,12 @@ export default function TabsLayout() {
         // native driver: in a browser, the slide can't run until the switch is done anyway.
         if (useNativeDriver) {
           Animated.timing(finger, { toValue: x < 0 ? -width : width, ...SLIDE, useNativeDriver }).start();
-          handoff.current = setTimeout(
-            () => release(Animated.spring(finger, { toValue: 0, ...SNAP_BACK, useNativeDriver })),
-            HANDOFF_MS,
-          );
+          handoff.current = setTimeout(() => {
+            swiped.current = false;
+            release(Animated.spring(finger, { toValue: 0, ...SNAP_BACK, useNativeDriver }));
+          }, HANDOFF_MS);
         }
+        swiped.current = true;
         router.navigate(`/${TABS[to]}`);
       } else {
         release(Animated.spring(finger, { toValue: 0, velocity: e.velocityX, ...SNAP_BACK, useNativeDriver }));
@@ -168,7 +176,7 @@ export default function TabsLayout() {
   const tabs = useMemo(
     () => (
       <Tabs
-        tabBar={(props) => <TabNav {...props} drag={drag} pageWidth={size.width} />}
+        tabBar={(props) => <TabNav {...props} drag={drag} pageWidth={size.width} takeSwiped={takeSwiped} swipeSlide={SLIDE} />}
         // Keep every tab mounted and attached, so switching tabs is instant and nothing reloads.
         detachInactiveScreens={false}
         screenListeners={({ route }) => ({
@@ -198,7 +206,7 @@ export default function TabsLayout() {
         ))}
       </Tabs>
     ),
-    [size.width, drag, parks, finger, release],
+    [size.width, drag, parks, finger, release, takeSwiped],
   );
 
   return (
