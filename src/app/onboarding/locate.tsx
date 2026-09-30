@@ -1,15 +1,14 @@
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
 
 import { useAppState } from '@/lib/app-state';
-import { geocodeAddress, reverseGeocode, type AddressQuery } from '@/lib/geocode';
+import { geocodeAddress, reverseGeocode, sameQuery, trimmedQuery as trimmed, type AddressQuery } from '@/lib/geocode';
 import { distanceMeters, getDeviceLocation, type LatLng } from '@/lib/location';
 import { AddressFields } from '@/ui/AddressFields';
-import { Artboard, BUTTON_GROW, Layer, PressableLayer, useFrame } from '@/ui/Artboard';
+import { Artboard, BUTTON_GROW, Layer, PressableLayer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { Dialog } from '@/ui/Dialog';
-import { LoaderMorphing } from '@/ui/LoaderMorphing';
+import { ButtonSpinner } from '@/ui/LoaderMorphing';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, locate } = ui;
@@ -24,17 +23,6 @@ const EMPTY_QUERY: AddressQuery = { address: '', city: '', state: '' };
 /** Editing a saved lawn from closer than this (meters), you're at it: keep its saved address. */
 const AT_SAVED_LAWN_M = 150;
 
-const trimmed = (form: AddressQuery): AddressQuery => ({
-  address: form.address.trim(),
-  city: form.city.trim(),
-  state: form.state.trim(),
-});
-
-const sameQuery = (a: AddressQuery, b: AddressQuery) =>
-  a.address.toLowerCase() === b.address.toLowerCase() &&
-  a.city.toLowerCase() === b.city.toLowerCase() &&
-  a.state.toLowerCase() === b.state.toLowerCase();
-
 // Lawnalyze UI (1).zip
 export default function LocateScreen() {
   const { lawn, setLawn } = useAppState();
@@ -48,6 +36,8 @@ export default function LocateScreen() {
   // wherever it should be (rather than to the saved lawn and then on to the phone).
   const [located, setLocated] = useState<Located | null>(null);
   const [searching, setSearching] = useState(false);
+  // Goes up each time the phone's location fills in the boxes: they glow green inside as it does.
+  const [autofills, setAutofills] = useState(0);
   // A problem finding the address, shown in the app's rounded dialog.
   const [notice, setNotice] = useState<{ title: string; message: string } | null>(null);
   const notify = (title: string, message: string) => setNotice({ title, message });
@@ -84,6 +74,7 @@ export default function LocateScreen() {
       const address = await reverseGeocode(spot).catch(() => null);
       if (!active || !address || !untouched()) return;
       setForm(address);
+      setAutofills((count) => count + 1);
       setLocated({ query: address, spot });
     })();
     return () => {
@@ -139,6 +130,7 @@ export default function LocateScreen() {
         onChange={setForm}
         onSubmit={findMyLawn}
         shift={{ address: SHIFT.address, cityState: SHIFT.cityState }}
+        glow={autofills}
       />
       <SatelliteSlot
         x={24}
@@ -168,17 +160,3 @@ export default function LocateScreen() {
     </Artboard>
   );
 }
-
-/** While the address is being looked up: the white morphing loader, in the button's right end. */
-function ButtonSpinner() {
-  const { scale } = useFrame();
-  return (
-    <View pointerEvents="none" style={[styles.spinner, { right: 16 * scale }]}>
-      <LoaderMorphing size={17 * scale} color="#fff" />
-    </View>
-  );
-}
-
-const styles = StyleSheet.create({
-  spinner: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center' },
-});

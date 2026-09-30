@@ -4,8 +4,11 @@ import type { LatLng } from '@/lib/location';
 
 import { buildSatelliteHtml, type MapCommand, type MapEvent, type MapTool, type SatelliteOptions } from './satelliteHtml';
 
-/** A tool button press; `id` changes on every press so repeated taps of one tool still send. */
-export type ToolPress = { tool: MapTool; id: number };
+/**
+ * A tool button press; `id` changes on every press so repeated taps of one tool still send.
+ * `lawn`: with delete, which lawn (its index among the outlines); otherwise the selected one.
+ */
+export type ToolPress = { tool: MapTool; id: number; lawn?: number };
 
 export type SatelliteMapProps = SatelliteOptions & {
   toolPress?: ToolPress | null;
@@ -40,7 +43,7 @@ export function useSatellitePage(props: SatelliteMapProps, send: (command: MapCo
   useEffect(() => {
     if (!loaded || !toolPress || toolPress.id === lastTool.current) return;
     lastTool.current = toolPress.id;
-    send({ type: 'tool', tool: toolPress.tool });
+    send({ type: 'tool', tool: toolPress.tool, lawn: toolPress.lawn });
   }, [loaded, toolPress, send]);
 
   const onLoad = useCallback(() => setLoaded(true), []);

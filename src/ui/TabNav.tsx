@@ -48,11 +48,19 @@ function layoutFor(index: number) {
 const LAYOUTS = TABS.map((_, i) => layoutFor(i));
 const PILL_W = TABS[0].cell[1] - TABS[0].cell[0]; // every tab's cell is the same width
 
+type Props = BottomTabBarProps & {
+  /** How far a swipe has dragged the tab screens (dp; negative is toward the next tab)... */
+  drag?: Animated.Value;
+  /** ...and how wide they are: a full width's drag is one tab along. */
+  pageWidth?: number;
+};
+
 /**
  * The Home / Usage / Rebates / Settings bar. Tapping a tab slides the white pill over to it
- * (and the pills beside it follow), along with the dot underneath.
+ * (and the pills beside it follow), along with the dot underneath. Mid-swipe, the pill moves
+ * along with the screens.
  */
-export function TabNav({ state, navigation }: BottomTabBarProps) {
+export function TabNav({ state, navigation, drag, pageWidth }: Props) {
   const frame = useFrameMetrics(TAB_CHIN_DROP);
   const s = frame.scale;
   const index = state.index;
@@ -114,8 +122,9 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
 
   const pillH = BAR.h * s;
   const slide = useMemo(() => {
+    const at = drag && pageWidth ? Animated.add(position, Animated.multiply(drag, -1 / pageWidth)) : position;
     const along = (x: (i: number) => number) =>
-      position.interpolate({ inputRange: TABS.map((_, i) => i), outputRange: TABS.map((_, i) => x(i) * s) });
+      at.interpolate({ inputRange: TABS.map((_, i) => i), outputRange: TABS.map((_, i) => x(i) * s) });
     return {
       active: along((i) => LAYOUTS[i].activeLeft),
       // Side pills are full-bar-wide pills clipped by the bar's rounded ends (see below).
@@ -123,7 +132,7 @@ export function TabNav({ state, navigation }: BottomTabBarProps) {
       after: along((i) => LAYOUTS[i].afterLeft),
       dot: along((i) => (TABS[i].cell[0] + TABS[i].cell[1]) / 2 - DOT.size / 2),
     };
-  }, [position, s]);
+  }, [position, s, drag, pageWidth]);
 
   // Center the pills + dot in the green area between the card and the bottom of the screen.
   const bottom = drawnHeight ?? frame.height;

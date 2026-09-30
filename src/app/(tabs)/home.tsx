@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { View } from 'react-native';
+import Svg, { Rect } from 'react-native-svg';
 
 import { useAppState, type HomeSection, type Units } from '@/lib/app-state';
 import { outlineSquareFeet } from '@/lib/area';
@@ -7,7 +9,7 @@ import { useLawnEstimate } from '@/lib/estimate';
 import { formatDollars, formatMoney } from '@/lib/format';
 import { formatAreaNumber } from '@/lib/units';
 import { useWeather } from '@/lib/weather';
-import { Artboard, TAB_CHIN_DROP, Layer } from '@/ui/Artboard';
+import { Artboard, TAB_CHIN_DROP, Layer, useFrame, useRect } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
 import { DragSections, type SectionFrame } from '@/ui/DragSections';
@@ -149,7 +151,7 @@ type LawnBoxProps = { y: number; squareFeet: number | null; units: Units; emptyT
 function LawnBox({ y, squareFeet, units, emptyText }: LawnBoxProps) {
   return (
     <>
-      <Layer asset={home.boxLawn} x={22} y={y} />
+      {squareFeet === null ? <EmptyBox y={y} /> : <Layer asset={home.boxLawn} x={22} y={y} />}
       {squareFeet !== null && (
         <>
           <DesignText x={36} y={y + 14} w={100} h={24} size={20}>
@@ -171,5 +173,31 @@ function LawnBox({ y, squareFeet, units, emptyText }: LawnBoxProps) {
         </DesignText>
       )}
     </>
+  );
+}
+
+/** A lawn box with nothing in it yet: the same white box, with a dashed grey outline. */
+function EmptyBox({ y }: { y: number }) {
+  const { w, h } = home.boxLawn;
+  const rect = useRect({ x: 22, y }, w, h);
+  const { scale } = useFrame();
+  const stroke = 1.3 * scale;
+  return (
+    <View pointerEvents="none" style={rect}>
+      <Svg width={rect.width} height={rect.height}>
+        <Rect
+          x={stroke / 2}
+          y={stroke / 2}
+          width={rect.width - stroke}
+          height={rect.height - stroke}
+          rx={15 * scale}
+          fill="#fff"
+          stroke="#CCCDCE"
+          strokeWidth={stroke}
+          strokeDasharray={[6 * scale, 4.5 * scale]}
+          strokeLinecap="round"
+        />
+      </Svg>
+    </View>
   );
 }

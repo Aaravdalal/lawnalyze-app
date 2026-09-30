@@ -3,13 +3,16 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { View } from 'react-native';
 
-import { MAX_LAWNS, useAppState } from '@/lib/app-state';
+import { MAX_LAWNS, useAppState, type Lawn } from '@/lib/app-state';
+import { geocodeAddress, sameQuery, trimmedQuery, type AddressQuery } from '@/lib/geocode';
+import { distanceMeters } from '@/lib/location';
 import type { MapEvent, MapTool } from '@/components/satellite/satelliteHtml';
 import type { ToolPress } from '@/components/satellite/useSatellitePage';
 import { AddressFields } from '@/ui/AddressFields';
-import { Artboard, BUTTON_GROW, Hotspot, Layer, PressableLayer, useFrame, useRect } from '@/ui/Artboard';
+import { Artboard, BUTTON_GROW, GREEN, Hotspot, Layer, PressableLayer, useRect } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { Dialog } from '@/ui/Dialog';
+import { ButtonSpinner } from '@/ui/LoaderMorphing';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, mark } = ui;
@@ -19,16 +22,79 @@ const { common, mark } = ui;
 const SHIFT = { header: 8, address: 16, cityState: 26, map: 36 };
 /** Room around the lawns when the map opens (design pts): the tools cover the left 50. */
 const MAP_FIT_INSETS = { left: 58, top: 22, right: 22, bottom: 22 };
+/**
+ * A changed address found this close (meters) to the lawn is the same place, just written
+ * differently. (A lawn found from the phone's location sits where the phone was, and the
+ * geocoder puts its address a few dozen meters away, e.g. at the street.)
+ */
+const SAME_PLACE_M = 150;
 
-// Lawnalyze UI (2).zip
+type Notice = { title: string; message: string };
+
+const addressOf = (lawn: Lawn | null): AddressQuery => ({
+  address: lawn?.address ?? '',
+  city: lawn?.city ?? '',
+  state: lawn?.state ?? '',
+});
+
+// Lawnalyze UI (2).zip. Also Settings > Edit Lawn, where the address can be changed too.
 export default function MarkScreen() {
-  const { lawn, outlines, setOutlines } = useAppState();
+  const { lawn, outlines, setLawn, setOutlines } = useAppState();
   // The map is built with the outlines saved when the screen opened; edits flow back via events.
   const [initialOutlines] = useState(outlines);
   const [toolPress, setToolPress] = useState<ToolPress | null>(null);
   const [drawing, setDrawing] = useState(false);
   const [showMarkHint, setShowMarkHint] = useState(false);
   const [showLimit, setShowLimit] = useState(false);
+  // A lawn pressed and held on the map (its index): asks whether to delete it.
+  const [lawnMenu, setLawnMenu] = useState<number | null>(null);
+
+  // The address boxes can be edited: a new address moves the map (and the lawn) there.
+  const [form, setForm] = useState<AddressQuery>(() => addressOf(lawn));
+  const [searching, setSearching] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  // Found somewhere else: waits for a yes, since the lawns marked here get cleared.
+  const [moveTo, setMoveTo] = useState<Lawn | null>(null);
+  const addressChanged = !sameQuery(trimmedQuery(form), trimmedQuery(addressOf(lawn)));
+
+  function moveLawn(next: Lawn) {
+    setMoveTo(null);
+    // A new spot: the lawns marked around the old one are cleared, and the map flies there.
+    setLawn(next);
+    setToolPress({ tool: 'clear', id: Date.now() });
+  }
+
+  function keepAddress() {
+    setMoveTo(null);
+    setForm(addressOf(lawn));
+  }
+
+  async function findAddress() {
+    if (searching || !addressChanged) return;
+    const query = trimmedQuery(form);
+    if (!query.address) {
+      setNotice({ title: 'Enter your address', message: 'Type the street address of your lawn.' });
+      return;
+    }
+    setSearching(true);
+    try {
+      const spot = await geocodeAddress(query);
+      if (!spot) {
+        setNotice({ title: "We couldn't find that address", message: 'Check the street, city and state, then try again.' });
+      } else if (lawn && distanceMeters(spot, lawn) < SAME_PLACE_M) {
+        // Same place (e.g. a typo fixed): just the new wording; the marked lawns stay.
+        setLawn({ ...query, latitude: lawn.latitude, longitude: lawn.longitude });
+      } else if (outlines.length > 0) {
+        setMoveTo({ ...query, ...spot });
+      } else {
+        moveLawn({ ...query, ...spot });
+      }
+    } catch {
+      setNotice({ title: "Couldn't reach the map service", message: 'Check your internet connection and try again.' });
+    } finally {
+      setSearching(false);
+    }
+  }
 
   const press = (tool: MapTool) => {
     Haptics.selectionAsync().catch(() => {});
@@ -37,10 +103,24 @@ export default function MarkScreen() {
   const onMapEvent = (event: MapEvent) => {
     if (event.type === 'outlines') setOutlines(event.outlines);
     else if (event.type === 'drawing') setDrawing(event.drawing);
-    else setShowLimit(true);
+    else if (event.type === 'limit') setShowLimit(true);
+    else if (event.type === 'lawnMenu') setLawnMenu(event.index);
+    else {
+      const style = event.style === 'light' ? Haptics.ImpactFeedbackStyle.Light : Haptics.ImpactFeedbackStyle.Medium;
+      Haptics.impactAsync(style).catch(() => {});
+    }
   };
+  function deleteHeldLawn() {
+    if (lawnMenu !== null) setToolPress({ tool: 'delete', id: Date.now(), lawn: lawnMenu });
+    setLawnMenu(null);
+  }
 
   function markMyLawn() {
+    // A new address typed in: go there first.
+    if (addressChanged) {
+      findAddress();
+      return;
+    }
     if (outlines.length === 0) {
       setShowMarkHint(true);
       return;
@@ -61,7 +141,10 @@ export default function MarkScreen() {
       <Layer asset={common.iconBox} x={32} y={24 + SHIFT.header} />
       <Layer asset={mark.iconPencil} x={40} y={32 + SHIFT.header} />
       <Layer asset={mark.titleMarkYourLawn} x={84} y={33 + SHIFT.header} />
-      <AddressFields value={{ address: lawn?.address ?? '', city: lawn?.city ?? '', state: lawn?.state ?? '' }}
+      <AddressFields
+        value={form}
+        onChange={setForm}
+        onSubmit={findAddress}
         shift={{ address: SHIFT.address, cityState: SHIFT.cityState }}
       />
 
@@ -99,8 +182,11 @@ export default function MarkScreen() {
         y={0}
         anchor="chin"
         label="Mark My Lawn"
+        disabled={searching}
         onPress={markMyLawn}
-      />
+      >
+        {searching && <ButtonSpinner />}
+      </PressableLayer>
 
       <Dialog
         visible={showMarkHint}
@@ -114,19 +200,30 @@ export default function MarkScreen() {
         message="To mark a different one, tap an area on the map to select it, then delete it with the trash button."
         onClose={() => setShowLimit(false)}
       />
+      <Dialog
+        visible={lawnMenu !== null}
+        title="Delete this lawn?"
+        message="To move it instead, press and hold the lawn, then drag it."
+        buttonLabel="Cancel"
+        onClose={() => setLawnMenu(null)}
+        action={{ label: 'Delete', onPress: deleteHeldLawn, destructive: true }}
+      />
+      <Dialog
+        visible={moveTo !== null}
+        title="Move your lawn here?"
+        message="The lawn areas you marked at the old address will be cleared, so you can mark the ones at the new address."
+        buttonLabel="Cancel"
+        onClose={keepAddress}
+        action={{ label: 'Move', onPress: () => moveTo && moveLawn(moveTo) }}
+      />
+      <Dialog visible={notice !== null} title={notice?.title ?? ''} message={notice?.message} onClose={() => setNotice(null)} />
     </Artboard>
   );
 }
 
-/** Blue ring around the pencil tool while drawing mode is on. */
+/** Lawnalyze-green ring around the pencil tool while drawing (drawn behind its white circle). */
 function ActiveRing({ x, y, size }: { x: number; y: number; size: number }) {
-  const { scale } = useFrame();
-  const pad = 2;
+  const pad = 3.5;
   const rect = useRect({ x: x - pad, y: y - pad }, size + pad * 2, size + pad * 2);
-  return (
-    <View
-      pointerEvents="none"
-      style={[rect, { borderRadius: rect.width / 2, borderWidth: 2.5 * scale, borderColor: '#2F6BFF' }]}
-    />
-  );
+  return <View pointerEvents="none" style={[rect, { borderRadius: rect.width / 2, backgroundColor: GREEN }]} />;
 }

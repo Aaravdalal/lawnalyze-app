@@ -6,16 +6,19 @@ import type { LatLng } from './location';
 
 // Lawn watering estimates from local weather, using the standard evapotranspiration method
 // irrigation designers use (the same formula as California's Model Water Efficient Landscape
-// Ordinance, MWELO: gallons = ET₀ × 0.62 × plant factor × area ÷ irrigation efficiency),
+// Ordinance, MWELO 2015: gallons = ET₀ × 0.62 × plant factor × area ÷ irrigation efficiency),
 // run day by day so rain can be credited:
 // - grass uses reference evapotranspiration (ET₀, FAO-56 Penman-Monteith: driven by heat,
 //   sun, wind and humidity) times a turf coefficient;
 // - rain refills the soil; the root zone stores about an inch of water;
 // - sprinklers lose some of what they apply.
 //
-// Weather data: Open-Meteo (free, no key) — the last year of daily history for the yearly
-// figure, and the recent days + 7-day forecast for this week. Note: gridded weather data
-// tends to put ET₀ 10–20% above what California's CIMIS stations measure near the Bay.
+// Weather data: Open-Meteo (free, no key) — the last year of daily weather for the yearly
+// figure, and the recent days + 7-day forecast for this week. The year comes from its archive
+// of high-resolution weather-model runs rather than its reanalysis archive, because rain decides
+// how much watering a lawn needs: checked against NOAA airport rain gauges over the same year,
+// the reanalysis read about 50% too wet on average (Phoenix: 20.2 in vs 8.1 in measured), the
+// high-resolution archive about 20% off (Phoenix 7.6 in, San Jose 12.8 in vs 12.8 in).
 
 /** Root-zone water a lawn can draw on: ~6 in of roots × ~0.17 in of water per inch of soil. */
 const ROOT_ZONE_MM = 25;
@@ -23,9 +26,10 @@ const ROOT_ZONE_MM = 25;
 const REFILL_AT = 0.5;
 /**
  * Share of sprinkler water that reaches the roots (the rest is lost to evaporation, wind and
- * runoff): MWELO's average irrigation efficiency.
+ * runoff): MWELO 2015's irrigation efficiency for overhead spray, the kind lawns use (drip is
+ * 0.81; the 2009 ordinance used 0.71 for everything).
  */
-export const SPRINKLER_EFFICIENCY = 0.71;
+export const SPRINKLER_EFFICIENCY = 0.75;
 /** Rain lighter than this (0.1 in) mostly evaporates off the grass before reaching roots. */
 const MIN_USEFUL_RAIN_MM = 2.5;
 /** Share of real rain that soaks into the root zone. */
@@ -95,16 +99,22 @@ function yearlyNeedMm(days: Day[], kc: number): number {
   return applied;
 }
 
-/** Water to apply over the next 7 days (mm), credited for rain still in the soil. */
+/**
+ * Water to apply over the next 7 days (mm): what the grass will use, less what rain and the
+ * water already in the soil provide. Day by day, like the yearly figure, so rain only counts up
+ * to what the root zone can hold (the rest runs off or drains past the roots).
+ */
 function weeklyNeedMm(lastWeek: Day[], nextWeek: Day[], kc: number): number {
-  // Recent rain: start from a typically half-used root zone and see if rain refilled it.
-  let used = ROOT_ZONE_MM * REFILL_AT;
-  for (const day of lastWeek) {
-    used = Math.min(ROOT_ZONE_MM, Math.max(0, used + lawnUse(day, kc) - usefulRain(day.rain)));
-  }
-  const rainCredit = Math.max(0, ROOT_ZONE_MM * REFILL_AT - used);
-  const need = nextWeek.reduce((sum, day) => sum + lawnUse(day, kc) - usefulRain(day.rain), 0);
-  return Math.max(0, need - rainCredit);
+  const typical = ROOT_ZONE_MM * REFILL_AT;
+  // Going into the week: watered as usual, the root zone is at most typically half used, and
+  // last week's rain may have left it fuller.
+  let used = typical;
+  for (const day of lastWeek) used = Math.min(typical, Math.max(0, used + lawnUse(day, kc) - usefulRain(day.rain)));
+  // This week without watering: the grass keeps drawing water (past what the soil holds, that's
+  // what watering has to supply), and rain refills the soil, but never past full.
+  for (const day of nextWeek) used = Math.max(0, used + lawnUse(day, kc) - usefulRain(day.rain));
+  // Watering makes up the difference, leaving the lawn at its typical level again.
+  return Math.max(0, used - typical);
 }
 
 /** Up to half the national average is Great; up to 80%, Fair; more, Bad. */
@@ -169,12 +179,12 @@ async function getJson<T>(url: string): Promise<T> {
 
 async function fetchClimate({ latitude, longitude }: LatLng): Promise<Climate> {
   const where = `latitude=${latitude}&longitude=${longitude}&timezone=auto`;
-  // The history archive lags a few days behind, so the year ends 6 days ago.
-  const end = new Date(Date.now() - 6 * 86_400_000);
+  // The past 365 days, up to yesterday.
+  const end = new Date(Date.now() - 86_400_000);
   const start = new Date(end.getTime() - 364 * 86_400_000);
-  const [archive, forecast] = await Promise.all([
+  const [history, forecast] = await Promise.all([
     getJson<{ daily: Daily }>(
-      `https://archive-api.open-meteo.com/v1/archive?${where}&start_date=${isoDate(start)}&end_date=${isoDate(end)}` +
+      `https://historical-forecast-api.open-meteo.com/v1/forecast?${where}&start_date=${isoDate(start)}&end_date=${isoDate(end)}` +
         '&daily=et0_fao_evapotranspiration,precipitation_sum,temperature_2m_mean',
     ),
     getJson<{ daily: Daily }>(
@@ -182,7 +192,7 @@ async function fetchClimate({ latitude, longitude }: LatLng): Promise<Climate> {
         '&daily=et0_fao_evapotranspiration,precipitation_sum,temperature_2m_max,temperature_2m_min',
     ),
   ]);
-  const lastYear = toDays(archive.daily);
+  const lastYear = toDays(history.daily);
   const recent = toDays(forecast.daily); // 7 past days, then today + 6 days ahead
   return {
     lastYear,

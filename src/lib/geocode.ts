@@ -8,6 +8,19 @@ const NOMINATIM = 'https://nominatim.openstreetmap.org';
 
 export type AddressQuery = { address: string; city: string; state: string };
 
+/** The form's text without stray spaces at either end. */
+export const trimmedQuery = (form: AddressQuery): AddressQuery => ({
+  address: form.address.trim(),
+  city: form.city.trim(),
+  state: form.state.trim(),
+});
+
+/** The same address, ignoring capitals. */
+export const sameQuery = (a: AddressQuery, b: AddressQuery) =>
+  a.address.toLowerCase() === b.address.toLowerCase() &&
+  a.city.toLowerCase() === b.city.toLowerCase() &&
+  a.state.toLowerCase() === b.state.toLowerCase();
+
 function toQueryString(params: Record<string, string>): string {
   return Object.entries(params)
     .filter(([, value]) => value.length > 0)

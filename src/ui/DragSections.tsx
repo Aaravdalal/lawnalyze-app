@@ -20,6 +20,8 @@ type Props<K extends string> = {
 
 /** Hold this long (ms) without moving to pick a section up. */
 const HOLD_MS = 350;
+/** A distance (dp) no finger travels. */
+const NEVER = 100_000;
 /** Picked-up sections grow by this much. */
 const LIFT_SCALE = 1.03;
 // Sections glide into place on a bouncy spring: a little past their spot, then back (damping
@@ -174,6 +176,10 @@ export function DragSections<K extends string>({ frames, order, onReorder, child
     () =>
       Gesture.Pan()
         .activateAfterLongPress(HOLD_MS)
+        // Only a hold picks a section up. (By default a pan also starts once the finger has
+        // moved exactly the touch slop, the one distance that doesn't cancel the hold, which
+        // could take a slow sideways swipe away from the tab swipe.)
+        .minDistance(NEVER)
         .runOnJS(true)
         .onStart((e) => handlers.current.start(e.y))
         .onUpdate((e) => handlers.current.update(e.translationY))

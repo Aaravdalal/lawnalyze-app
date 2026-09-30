@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Animated, Easing } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
+
+import { useFrame } from './Artboard';
 
 type Props = {
   size?: number;
@@ -53,3 +55,17 @@ export function LoaderMorphing({ size = 40, color = '#fff', duration = 2000 }: P
     />
   );
 }
+
+/** While an address is being looked up: the white morphing loader, in a button's right end. */
+export function ButtonSpinner() {
+  const { scale } = useFrame();
+  return (
+    <View pointerEvents="none" style={[styles.spinner, { right: 16 * scale }]}>
+      <LoaderMorphing size={17 * scale} color="#fff" />
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  spinner: { position: 'absolute', top: 0, bottom: 0, justifyContent: 'center' },
+});
