@@ -146,6 +146,7 @@ export default function MarkScreen() {
         onChange={setForm}
         onSubmit={findAddress}
         shift={{ address: SHIFT.address, cityState: SHIFT.cityState }}
+        searching={searching}
       />
 
       <SatelliteSlot

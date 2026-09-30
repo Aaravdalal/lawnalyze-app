@@ -65,14 +65,8 @@ export default function SettingsScreen() {
   const y = (value: number) => value + EDIT_SHIFT;
 
   return (
-    <Artboard
-      cardBottom={568}
-      compactChin={TAB_CHIN_DROP}
-      glows={[
-        { asset: common.glow, x: -284, y: -15 },
-        { asset: common.glowTall, x: -17, y: 79 },
-      ]}
-    >
+    // The green glows behind the tabs are drawn once for all of them (TabGlows).
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
       <Layer asset={common.logoSmall} x={24} y={26.5} />
       <Layer asset={settings.titleSettings} x={24} y={95} />
 

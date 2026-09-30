@@ -36,17 +36,8 @@ export default function UsageScreen() {
   const estimate = useLawnEstimate(lawn, outlines);
 
   return (
-    <Artboard
-      cardBottom={568}
-      compactChin={TAB_CHIN_DROP}
-      glows={[
-        { asset: common.glowWide, x: -59, y: 182 },
-        { asset: common.glow, x: 32, y: -99 },
-        { asset: common.glow, x: -128, y: 4 },
-        { asset: common.glow, x: -38, y: -109 },
-        { asset: common.glow, x: 62, y: 135 },
-      ]}
-    >
+    // The green glows behind the tabs are drawn once for all of them (TabGlows).
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
       <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <DragSections

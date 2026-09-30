@@ -78,7 +78,7 @@ export type Glow = { asset: UiAsset; x: number; y: number };
 type ArtboardProps = {
   /** Design y where the white card's rounded bottom edge ends. */
   cardBottom: number;
-  glows: Glow[];
+  glows?: Glow[];
   /** Design y of the green-to-white gradient used on the intro screens. */
   gradientY?: number;
   /** Shorter green area under the card (used on the intro screen). */
@@ -86,7 +86,7 @@ type ArtboardProps = {
   children: ReactNode;
 };
 
-export function Artboard({ cardBottom, glows, gradientY, compactChin = false, children }: ArtboardProps) {
+export function Artboard({ cardBottom, glows = [], gradientY, compactChin = false, children }: ArtboardProps) {
   const metrics = useFrameMetrics(compactChin);
   const { width, height } = metrics;
   // On Android the window height can exclude the gesture bar, so measure what's really drawn.

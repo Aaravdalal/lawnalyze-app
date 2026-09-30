@@ -36,15 +36,8 @@ export default function RebatesScreen() {
   }
 
   return (
-    <Artboard
-      cardBottom={568}
-      compactChin={TAB_CHIN_DROP}
-      glows={[
-        { asset: common.glow, x: 31, y: -112 },
-        { asset: common.glowTall, x: -105, y: -108 },
-        { asset: common.glow, x: -45, y: 192 },
-      ]}
-    >
+    // The green glows behind the tabs are drawn once for all of them (TabGlows).
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
       <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <Layer asset={art.titleRebates} x={21} y={76} />

@@ -40,17 +40,8 @@ export default function HomeScreen() {
   );
 
   return (
-    <Artboard
-      cardBottom={568}
-      compactChin={TAB_CHIN_DROP}
-      glows={[
-        { asset: common.glowWide, x: 18, y: 135 },
-        { asset: common.glow, x: -121, y: 33 },
-        { asset: common.glow, x: -42, y: 207 },
-        { asset: common.glow, x: -115, y: -114 },
-        { asset: common.glow, x: -110, y: -107 },
-      ]}
-    >
+    // The green glows behind the tabs are drawn once for all of them (TabGlows).
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
       <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <DragSections

@@ -1,10 +1,11 @@
 import { router, useSegments } from 'expo-router';
 import { Tabs, type BottomTabNavigationOptions } from 'expo-router/js-tabs';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Animated, Easing, Platform, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import { TAB_CHIN_DROP, useFrameMetrics } from '@/ui/Artboard';
+import { TabGlows } from '@/ui/TabGlows';
 import { TabNav } from '@/ui/TabNav';
 
 /** The tabs in order, left to right (same as the nav bar). */
@@ -67,6 +68,14 @@ export default function TabsLayout() {
   // How far (dp) a swipe has dragged the screens; negative is toward the next tab.
   const [drag] = useState(() => new Animated.Value(0));
   const [parks] = useState(() => TABS.map((_, i) => new Animated.Value(parkFor(i, Math.max(0, current), frame.width))));
+
+  // The tab showing, for the glows behind the screens: moves with the screens' slide, and
+  // fractionally with a swipe.
+  const [position] = useState(() => new Animated.Value(Math.max(0, current)));
+  useEffect(() => {
+    if (current >= 0) Animated.timing(position, { toValue: current, ...SLIDE, useNativeDriver }).start();
+  }, [current, position]);
+  const shown = useMemo(() => Animated.add(position, Animated.multiply(drag, -1 / size.width)), [position, drag, size.width]);
 
   // Swipe left or right anywhere on the card: the screens follow the finger, the next (or
   // previous) tab sliding in beside the current one. Let go far enough along, or flick, and it
@@ -139,6 +148,7 @@ export default function TabsLayout() {
           setSize((was) => (was.width === width && was.height === height ? was : { width, height }));
         }}
       >
+        <TabGlows at={shown} width={size.width} />
         {tabs}
       </View>
     </GestureDetector>

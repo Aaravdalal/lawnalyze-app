@@ -131,6 +131,7 @@ export default function LocateScreen() {
         onSubmit={findMyLawn}
         shift={{ address: SHIFT.address, cityState: SHIFT.cityState }}
         glow={autofills}
+        searching={searching}
       />
       <SatelliteSlot
         x={24}
