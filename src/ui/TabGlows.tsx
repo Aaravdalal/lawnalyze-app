@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { memo, useMemo } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 import { Artboard, Layer, TAB_CHIN_DROP, type Glow } from './Artboard';
@@ -51,9 +51,10 @@ type Props = {
 /**
  * The tab screens' soft green glows, drawn once behind all of them. The screens slide over it
  * while it crossfades from one tab's glows to the next (drifting a little the same way), so the
- * background never shows an edge where two screens meet.
+ * background never shows an edge where two screens meet. (Memo: switching tab re-renders the
+ * tabs' layout, and nothing here changes with it.)
  */
-export function TabGlows({ at, width }: Props) {
+export const TabGlows = memo(function TabGlows({ at, width }: Props) {
   const tabs = useMemo(() => {
     const tab = at.interpolate({
       inputRange: [0, GLOWS.length - 1],
@@ -79,4 +80,4 @@ export function TabGlows({ at, width }: Props) {
       </Artboard>
     </View>
   );
-}
+});

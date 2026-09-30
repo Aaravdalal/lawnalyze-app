@@ -1,8 +1,8 @@
 import { router, useSegments } from 'expo-router';
 import { Tabs, type BottomTabNavigationOptions } from 'expo-router/js-tabs';
-import { useEffect, useMemo, useState } from 'react';
-import { Animated, Easing, Platform, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, Platform } from 'react-native';
+import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 
 import { TAB_CHIN_DROP, useFrameMetrics } from '@/ui/Artboard';
 import { TabGlows } from '@/ui/TabGlows';
@@ -28,11 +28,18 @@ const EDGE_GIVE = 0.3;
 const SLIDE = { duration: 280, easing: Easing.out(Easing.cubic) };
 /** A swipe that doesn't change tab springs back. */
 const SNAP_BACK = { stiffness: 400, damping: 38, mass: 1 };
+/**
+ * A swipe let go toward a tab slides on by itself until the navigator starts its own slide; if
+ * that hasn't happened after this long (ms), it goes back instead.
+ */
+const HANDOFF_MS = 1000;
 /** Same as the navigator's own slide, which the swipe runs in step with. */
 const useNativeDriver = Platform.OS !== 'web';
 const EPSILON = 1e-3;
 
 type SceneInterpolator = NonNullable<BottomTabNavigationOptions['sceneStyleInterpolator']>;
+/** How far (dp) a swipe has moved the screens; negative is toward the next tab. */
+type Drag = Animated.AnimatedAddition<number>;
 
 /** Extra room (dp) off screen for tab `i` while tab `current` shows: none for its neighbours. */
 const parkFor = (i: number, current: number, width: number) => Math.max(0, Math.abs(i - current) - 1) * width;
@@ -44,7 +51,7 @@ const parkFor = (i: number, current: number, width: number) => Math.max(0, Math.
  * get `park`, so only the neighbours sit right at the edge, ready for a swipe to pull them in,
  * and the rest never pile up behind them.
  */
-function slideScene(width: number, drag: Animated.Value, park: Animated.Value): SceneInterpolator {
+function slideScene(width: number, drag: Drag, park: Animated.Value): SceneInterpolator {
   return ({ current: { progress } }) => {
     const waiting = progress.interpolate({ inputRange: [-1, -1 + EPSILON, 1 - EPSILON, 1], outputRange: [-1, 0, 0, 1] });
     const slid = progress.interpolate({ inputRange: [-1, 1], outputRange: [-width, width] });
@@ -54,9 +61,6 @@ function slideScene(width: number, drag: Animated.Value, park: Animated.Value): 
   };
 }
 
-const snapBack = (drag: Animated.Value, velocity: number) =>
-  Animated.spring(drag, { toValue: 0, velocity, ...SNAP_BACK, useNativeDriver }).start();
-
 // The Figma nav bar is drawn over the tab screens (see TabNav) so it can animate between tabs.
 export default function TabsLayout() {
   const segments = useSegments();
@@ -64,10 +68,54 @@ export default function TabsLayout() {
   const frame = useFrameMetrics(TAB_CHIN_DROP);
   const chinTop = frame.top(CARD_BOTTOM, 'footer');
   const [size, setSize] = useState({ width: frame.width, height: frame.height });
+  // For the swipe's callbacks and the navigator's listeners, which are made once.
+  const latest = useRef({ current, width: size.width });
+  useEffect(() => {
+    latest.current = { current, width: size.width };
+  }, [current, size.width]);
 
-  // How far (dp) a swipe has dragged the screens; negative is toward the next tab.
-  const [drag] = useState(() => new Animated.Value(0));
+  // How far (dp) the finger has moved sideways since the swipe took over. The swipe sets it on
+  // the native side, with no JS in between, so the screens keep right up with the finger.
+  const [finger] = useState(() => new Animated.Value(0));
+  // How much of that the screens follow dragged back (right) and on (left): all of it toward a
+  // neighbouring tab, just a little (EDGE_GIVE) past the first or last one.
+  const [follow] = useState(() => ({ back: new Animated.Value(1), on: new Animated.Value(1) }));
+  const drag: Drag = useMemo(
+    () =>
+      Animated.add(
+        Animated.multiply(finger.interpolate({ inputRange: [0, 1], outputRange: [0, 1], extrapolateLeft: 'clamp' }), follow.back),
+        Animated.multiply(finger.interpolate({ inputRange: [-1, 0], outputRange: [-1, 0], extrapolateRight: 'clamp' }), follow.on),
+      ),
+    [finger, follow],
+  );
   const [parks] = useState(() => TABS.map((_, i) => new Animated.Value(parkFor(i, Math.max(0, current), frame.width))));
+
+  // The finger's value is back at 0 with nothing moving it. How much the screens follow only
+  // changes then: at any other time, changing it would move them.
+  const resting = useRef(true);
+  const followTab = useCallback(
+    (tab: number) => {
+      follow.back.setValue(tab > 0 ? 1 : EDGE_GIVE);
+      follow.on.setValue(tab < TABS.length - 1 ? 1 : EDGE_GIVE);
+    },
+    [follow],
+  );
+  useEffect(() => {
+    if (current >= 0 && resting.current) followTab(current);
+  }, [current, followTab]);
+  /** Runs an animation that brings the finger's value back to 0. */
+  const release = useCallback(
+    (animation: Animated.CompositeAnimation) =>
+      animation.start(({ finished }) => {
+        if (!finished) return;
+        resting.current = true;
+        if (latest.current.current >= 0) followTab(latest.current.current);
+      }),
+    [followTab],
+  );
+  // A swipe let go toward another tab, sliding on until the navigator's own slide takes over.
+  const handoff = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(handoff.current), []);
 
   // The tab showing, for the glows behind the screens: moves with the screens' slide, and
   // fractionally with a swipe.
@@ -81,27 +129,39 @@ export default function TabsLayout() {
   // previous) tab sliding in beside the current one. Let go far enough along, or flick, and it
   // carries on to that tab; otherwise it springs back. (Vertical drags, like rearranging
   // sections, don't count.) The green chin is left out: the nav bar there has its own swipes.
-  const swipe = useMemo(() => {
-    const hasNeighbour = (x: number) => (x < 0 ? current < TABS.length - 1 : current > 0);
-    // The gesture measures from where it took over, so the screens start following from there.
-    return Gesture.Pan()
-      .enabled(current >= 0)
-      .hitSlop({ bottom: -Math.max(0, size.height - chinTop) })
-      .activeOffsetX([-SLOP, SLOP])
-      .failOffsetY([-SLOP, SLOP])
-      .runOnJS(true)
-      .onUpdate((e) => {
-        const x = e.translationX;
-        drag.setValue(hasNeighbour(x) ? Math.max(-size.width, Math.min(size.width, x)) : x * EDGE_GIVE);
-      })
-      .onEnd((e, success) => {
-        const x = e.translationX;
-        const flick = Math.abs(e.velocityX) >= FLICK_VELOCITY;
-        const onward = flick ? e.velocityX * x > 0 : Math.abs(x) >= size.width * COMMIT_SHARE;
-        if (success && x !== 0 && hasNeighbour(x) && onward) router.navigate(`/${TABS[current + (x < 0 ? 1 : -1)]}`);
-        else snapBack(drag, e.velocityX);
-      });
-  }, [current, size, chinTop, drag]);
+  // The gesture measures from where it took over, so the screens start following from there.
+  const onSwipe = useMemo(() => Animated.event([{ nativeEvent: { translationX: finger } }], { useNativeDriver }), [finger]);
+  const onSwipeState = useCallback(
+    ({ nativeEvent: e }: PanGestureHandlerStateChangeEvent) => {
+      if (e.state === State.ACTIVE) {
+        resting.current = false;
+        clearTimeout(handoff.current);
+        return;
+      }
+      if (e.oldState !== State.ACTIVE) return;
+      const { current: tab, width } = latest.current;
+      const x = e.translationX;
+      const to = tab + (x < 0 ? 1 : -1);
+      const flick = Math.abs(e.velocityX) >= FLICK_VELOCITY;
+      const onward = flick ? e.velocityX * x > 0 : Math.abs(x) >= width * COMMIT_SHARE;
+      if (e.state === State.END && x !== 0 && to >= 0 && to < TABS.length && onward) {
+        // The screens slide on at once, rather than sitting still while the app switches tab and
+        // the navigator gets its own slide going (which then takes over, in step). Only with the
+        // native driver: in a browser, the slide can't run until the switch is done anyway.
+        if (useNativeDriver) {
+          Animated.timing(finger, { toValue: x < 0 ? -width : width, ...SLIDE, useNativeDriver }).start();
+          handoff.current = setTimeout(
+            () => release(Animated.spring(finger, { toValue: 0, ...SNAP_BACK, useNativeDriver })),
+            HANDOFF_MS,
+          );
+        }
+        router.navigate(`/${TABS[to]}`);
+      } else {
+        release(Animated.spring(finger, { toValue: 0, velocity: e.velocityX, ...SNAP_BACK, useNativeDriver }));
+      }
+    },
+    [finger, release],
+  );
 
   // Made once (and again only if the width changes): re-rendering the navigator restarts its
   // slide, which would cut a slide short, so changing tab mustn't re-render it from here.
@@ -114,7 +174,10 @@ export default function TabsLayout() {
         screenListeners={({ route }) => ({
           // A swiped screen goes the rest of the way with the navigator's slide, in step (same
           // timing, started together), so the two never pull against each other.
-          transitionStart: () => Animated.timing(drag, { toValue: 0, ...SLIDE, useNativeDriver }).start(),
+          transitionStart: () => {
+            clearTimeout(handoff.current);
+            release(Animated.timing(finger, { toValue: 0, ...SLIDE, useNativeDriver }));
+          },
           // Settled on the new tab: the ones more than a tab away move further out.
           transitionEnd: () => {
             const now = TABS.indexOf(route.name as Tab);
@@ -135,12 +198,20 @@ export default function TabsLayout() {
         ))}
       </Tabs>
     ),
-    [size.width, drag, parks],
+    [size.width, drag, parks, finger, release],
   );
 
   return (
-    <GestureDetector gesture={swipe}>
-      <View
+    <PanGestureHandler
+      enabled={current >= 0}
+      hitSlop={{ bottom: -Math.max(0, size.height - chinTop) }}
+      activeOffsetX={[-SLOP, SLOP]}
+      failOffsetY={[-SLOP, SLOP]}
+      onGestureEvent={onSwipe}
+      onHandlerStateChange={onSwipeState}
+    >
+      {/* Animated, so the swipe can move `finger` natively. */}
+      <Animated.View
         collapsable={false}
         style={{ flex: 1 }}
         onLayout={(e) => {
@@ -150,7 +221,7 @@ export default function TabsLayout() {
       >
         <TabGlows at={shown} width={size.width} />
         {tabs}
-      </View>
-    </GestureDetector>
+      </Animated.View>
+    </PanGestureHandler>
   );
 }

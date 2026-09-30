@@ -24,7 +24,9 @@ const REACH = { min: 0.25, max: 1 };
 const DRIFT_MS = { min: 600, max: 1500 };
 /** Tongues along the top and bottom edges are this many box-heights apart. */
 const TONGUE_SPACING = 0.9;
+/** The glow is all GREEN (#9EF9B4): the tongues are drawn in it, and the rim's softest light is it, a little see-through. */
 const TONGUE_IMAGE = require('../../assets/ui/common/glow-tongue.png');
+const GREEN_SOFT = 'rgba(158, 249, 180, 0.8)';
 const useNativeDriver = Platform.OS !== 'web';
 
 type Props = {
@@ -190,9 +192,10 @@ function Field({ box, x, y, inputRef, onChangeText, glow: fills, glowDelay, sear
           rect,
           {
             borderRadius: radius,
+            // All in the app's mint green (GREEN, #9EF9B4): a crisp line, then softer light inside it.
             boxShadow:
-              `inset 0 0 0 ${1.4 * scale}px ${GREEN}, inset 0 0 ${6 * scale}px ${1.5 * scale}px rgba(76, 222, 128, 0.7), ` +
-              `inset 0 0 ${12 * scale}px ${3 * scale}px rgba(158, 249, 180, 0.8)`,
+              `inset 0 0 0 ${1.4 * scale}px ${GREEN}, inset 0 0 ${6 * scale}px ${1.5 * scale}px ${GREEN}, ` +
+              `inset 0 0 ${12 * scale}px ${3 * scale}px ${GREEN_SOFT}`,
             opacity: looks.rimOpacity,
           },
         ]}

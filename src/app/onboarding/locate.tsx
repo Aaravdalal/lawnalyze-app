@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { useAppState } from '@/lib/app-state';
 import { geocodeAddress, reverseGeocode, sameQuery, trimmedQuery as trimmed, type AddressQuery } from '@/lib/geocode';
-import { distanceMeters, getDeviceLocation, type LatLng } from '@/lib/location';
+import { distanceMeters, findDevice, type LatLng } from '@/lib/location';
 import { AddressFields } from '@/ui/AddressFields';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
@@ -50,15 +50,21 @@ export default function LocateScreen() {
   // With location permission, go to where the phone is and fill in that address. Editing a
   // saved lawn, that happens only if you're somewhere else: standing at the lawn, its saved
   // address stays. Without permission, the user types their address and taps Find My Lawn.
+  // (The phone's last known position comes first, straight away; if a new fix then puts the
+  // phone somewhere else, the map and address move there.)
   const [savedLawn] = useState(lawn);
   useEffect(() => {
     let active = true;
     const opened = trimmed(formRef.current);
-    // Don't overwrite anything the user has typed since the screen opened.
-    const untouched = () => sameQuery(trimmed(formRef.current), opened);
-    (async () => {
-      const spot = await getDeviceLocation();
-      if (!active) return;
+    // The address the phone's position last filled in.
+    let filled: AddressQuery | null = null;
+    // Don't overwrite anything the user has typed since the screen opened (or since it was filled in).
+    const untouched = () => {
+      const now = trimmed(formRef.current);
+      return sameQuery(now, opened) || (filled !== null && sameQuery(now, filled));
+    };
+    let lookups = 0;
+    const stop = findDevice(async (spot) => {
       // No location, the user is typing a different address, or they're at the saved lawn:
       // show the saved lawn (if any).
       if (!spot || !untouched() || (savedLawn && distanceMeters(spot, savedLawn) < AT_SAVED_LAWN_M)) {
@@ -69,16 +75,19 @@ export default function LocateScreen() {
         return;
       }
       // The map goes there right away; the address follows once it's looked up. (Until then
-      // the boxes may still show the saved address, which doesn't match this spot.)
+      // the boxes may still show an address that doesn't match this spot.)
+      const lookup = ++lookups;
       setLocated({ query: savedLawn ? EMPTY_QUERY : opened, spot });
       const address = await reverseGeocode(spot).catch(() => null);
-      if (!active || !address || !untouched()) return;
+      if (!active || lookup !== lookups || !address || !untouched()) return;
+      filled = address;
       setForm(address);
       setAutofills((count) => count + 1);
       setLocated({ query: address, spot });
-    })();
+    });
     return () => {
       active = false;
+      stop();
     };
   }, [savedLawn]);
 

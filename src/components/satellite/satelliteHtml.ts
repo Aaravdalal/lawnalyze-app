@@ -224,14 +224,38 @@ export function buildSatelliteHtml({
     if (!SHOW_PIN) return;
     if (marker) marker.setLatLng([lat, lng]); else marker = L.marker([lat, lng], { icon: pin, interactive: false }).addTo(map);
   }
+  // How long (s) a flight takes: flying in from far out (e.g. the whole US, or another town), and
+  // hopping over to somewhere close by (e.g. the phone's newer position a few houses over).
+  var FLY_S = 1.6, HOP_S = 0.8;
+  // The imagery where a flight lands starts loading as it takes off, so it lands on a sharp
+  // picture: the map's own requests for those tiles then come straight from the cache. (Same
+  // tiles and addresses the tile layer works out for that view.)
+  var landing = [];
+  function preload(lat, lng, zoom) {
+    var z = Math.min(tiles.options.maxNativeZoom, Math.round(zoom));
+    var half = map.getSize().divideBy(2 * Math.pow(2, zoom - z));
+    var middle = map.project([lat, lng], z).floor();
+    var min = middle.subtract(half).divideBy(256).floor();
+    var max = middle.add(half).divideBy(256).ceil().subtract([1, 1]);
+    landing = [];
+    for (var x = min.x; x <= max.x; x++) {
+      for (var y = min.y; y <= max.y; y++) {
+        var img = new Image();
+        img.src = L.Util.template('${GOOGLE_HYBRID_TILES}', { s: String(Math.abs(x + y) % 4), x: x, y: y, z: z });
+        landing.push(img);
+      }
+    }
+  }
   function flyTo(lat, lng, zoom) {
     placePin(lat, lng);
+    preload(lat, lng, zoom);
+    var far = map.getZoom() < zoom - 2 || map.distance(map.getCenter(), [lat, lng]) > 1500;
     flying = true;
     map.once('moveend', function () {
       flying = false;
       if (refreshPending) { refreshPending = false; refresh(); }
     });
-    map.flyTo([lat, lng], zoom, { duration: 2.4 });
+    map.flyTo([lat, lng], zoom, { duration: far ? FLY_S : HOP_S });
   }
 
   // ---- Lawn outlines ----

@@ -1,5 +1,7 @@
 import { router } from 'expo-router';
+import { useEffect } from 'react';
 
+import { warmUpLocation } from '@/lib/location';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 
@@ -7,6 +9,9 @@ const { common, intro } = ui;
 
 // Lawnalyze UI.zip
 export default function IntroScreen() {
+  // Next is Locate, which goes to where the phone is: start finding it now.
+  useEffect(() => warmUpLocation(), []);
+
   return (
     <Artboard
       cardBottom={548}

@@ -50,7 +50,7 @@ const PILL_W = TABS[0].cell[1] - TABS[0].cell[0]; // every tab's cell is the sam
 
 type Props = BottomTabBarProps & {
   /** How far a swipe has dragged the tab screens (dp; negative is toward the next tab)... */
-  drag?: Animated.Value;
+  drag?: Animated.AnimatedAddition<number>;
   /** ...and how wide they are: a full width's drag is one tab along. */
   pageWidth?: number;
 };
