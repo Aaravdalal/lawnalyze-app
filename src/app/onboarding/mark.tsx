@@ -204,7 +204,7 @@ export default function MarkScreen() {
       <Dialog
         visible={lawnMenu !== null}
         title="Delete this lawn?"
-        message="To move it instead, press and hold the lawn, then drag it."
+        message="To move it instead, press and hold the lawn, then drag it. Put a second finger down to turn it."
         buttonLabel="Cancel"
         onClose={() => setLawnMenu(null)}
         action={{ label: 'Delete', onPress: deleteHeldLawn, destructive: true }}

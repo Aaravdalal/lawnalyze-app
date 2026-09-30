@@ -111,11 +111,8 @@ export function buildSatelliteHtml({
     padding: 0 4px; margin: 0 ${num(inset)}px ${num(Math.round(inset / 2))}px 0; border-radius: 4px;
   }
   /* A lawn's corners (placed while drawing, or dragged to reshape) are solid blue dots with a
-     white ring; the midpoints between them (drag one to add a corner) are the same dot, faded.
-     The reshaping handles sit in big invisible touch targets (40px). */
-  .corner, .mid { box-sizing: border-box; border-radius: 50%; background: ${LAWN_BLUE}; border: 3px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
-  .corner { width: 18px; height: 18px; margin: 11px; }
-  .mid { width: 16px; height: 16px; margin: 12px; opacity: .7; }
+     white ring. The reshaping handles sit in big invisible touch targets (40px). */
+  .corner { box-sizing: border-box; border-radius: 50%; width: 18px; height: 18px; margin: 11px; background: ${LAWN_BLUE}; border: 3px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
   /* Zoomed out, the lawn is a speck: hide its editing handles (and their touch areas). */
   .zoomed-out .lawn-handle { display: none; }
   /* A lawn picked up (press and hold) to move. */
@@ -263,8 +260,8 @@ export function buildSatelliteHtml({
   // ---- Lawn outlines ----
   // Drawing: tap to place corners; a solid blue line joins them in order, and from the third
   // one the area they close in is filled. Tap the first corner (or the pencil) to finish, which
-  // draws the last side. A finished lawn: tap it to reshape it (drag a corner; drag a midpoint
-  // to add one). Press and hold it to delete it, or hold and drag to move the whole lawn.
+  // draws the last side. A finished lawn: tap it to reshape it (drag a corner). Press and hold
+  // it to delete it, or hold and drag to move the whole lawn (with a second finger, to turn it).
   var EDITABLE = ${editable ? 'true' : 'false'};
   var BLUE = '${LAWN_BLUE}';
   var MAX_LAWNS = ${MAX_LAWNS};
@@ -272,8 +269,7 @@ export function buildSatelliteHtml({
   var HOLD_MS = 420; // press this long on a lawn to pick it up
   var HOLD_SLOP = 10; // px the finger may drift before the press counts as panning the map
   var lawns = [], active = null, drawing = null; // active: the lawn being reshaped; drawing: the one being drawn
-  function handleIcon(cls) { return L.divIcon({ className: 'lawn-handle', html: '<div class="' + cls + '"></div>', iconSize: [40, 40], iconAnchor: [20, 20] }); }
-  var CORNER = handleIcon('corner'), MID = handleIcon('mid');
+  var CORNER = L.divIcon({ className: 'lawn-handle', html: '<div class="corner"></div>', iconSize: [40, 40], iconAnchor: [20, 20] });
   // Corners placed while drawing look the same, but can't be dragged yet.
   var DOT = L.divIcon({ className: 'lawn-dot', html: '<div class="corner"></div>', iconSize: [40, 40], iconAnchor: [20, 20] });
 
@@ -290,7 +286,7 @@ export function buildSatelliteHtml({
 
   function newLawn(points, closed) {
     var lawn = {
-      pts: points, closed: closed, handles: [], mids: [],
+      pts: points, closed: closed, handles: [],
       shape: L.polygon([], { renderer: outlineRenderer, color: BLUE, weight: 4, lineJoin: 'round', fillColor: BLUE, fillOpacity: ${LAWN_FILL_OPACITY}, interactive: EDITABLE }),
       line: L.polyline([], { renderer: outlineRenderer, color: BLUE, weight: 4, lineCap: 'round', lineJoin: 'round', interactive: false })
     };
@@ -309,13 +305,7 @@ export function buildSatelliteHtml({
     lawns.push(lawn);
     return lawn;
   }
-  function clearHandles(lawn) { lawn.handles.forEach(function (h) { map.removeLayer(h); }); lawn.handles = []; lawn.mids = []; }
-  function midpoint(a, b) { return L.latLng((a.lat + b.lat) / 2, (a.lng + b.lng) / 2); }
-  // While a corner is dragged, the midpoint handles next to it follow along.
-  function moveMids(lawn) {
-    var n = lawn.pts.length;
-    lawn.mids.forEach(function (m, i) { m.setLatLng(midpoint(lawn.pts[i], lawn.pts[(i + 1) % n])); });
-  }
+  function clearHandles(lawn) { lawn.handles.forEach(function (h) { map.removeLayer(h); }); lawn.handles = []; }
   function render(lawn) {
     clearHandles(lawn);
     // Being drawn, the area has no line back to the first corner yet: only the finished lawn does.
@@ -336,20 +326,10 @@ export function buildSatelliteHtml({
     if (map.hasLayer(lawn.line)) map.removeLayer(lawn.line);
     if (!map.hasLayer(lawn.shape)) lawn.shape.addTo(map);
     if (!EDITABLE || lawn !== active) return;
-    // Reshaping: drag a corner to move it; drag a midpoint to add a corner there.
-    var n = lawn.pts.length;
-    lawn.pts.forEach(function (p, i) {
-      var a = p, b = lawn.pts[(i + 1) % n], added = false;
-      var m = L.marker(midpoint(a, b), { icon: MID, draggable: true, zIndexOffset: 900 }).addTo(map);
-      m.on('dragstart', function () { lawn.pts.splice(i + 1, 0, m.getLatLng()); added = true; });
-      m.on('drag', function () { if (added) { lawn.pts[i + 1] = m.getLatLng(); lawn.shape.setLatLngs(lawn.pts); } });
-      m.on('dragend', function () { render(lawn); emit(); });
-      lawn.handles.push(m);
-      lawn.mids.push(m);
-    });
+    // Reshaping: drag a corner to move it.
     lawn.pts.forEach(function (p, i) {
       var h = L.marker(p, { icon: CORNER, draggable: true, zIndexOffset: 1000 }).addTo(map);
-      h.on('drag', function () { lawn.pts[i] = h.getLatLng(); lawn.shape.setLatLngs(lawn.pts); moveMids(lawn); });
+      h.on('drag', function () { lawn.pts[i] = h.getLatLng(); lawn.shape.setLatLngs(lawn.pts); });
       h.on('dragend', function () { render(lawn); emit(); });
       lawn.handles.push(h);
     });
@@ -406,16 +386,19 @@ export function buildSatelliteHtml({
     else if (active) select(null); // a tap off the lawn puts its handles away
   });
 
-  // ---- Hold a lawn: delete it, or drag it somewhere else ----
+  // ---- Hold a lawn: delete it, or move it somewhere else ----
+  // Once it's picked up, one finger drags it. Put a second finger down to turn it as well: the
+  // lawn follows both fingers as if stuck to them, keeping its size.
+  var TURN_SLOP = 0.035; // radians (2°) the fingers must turn the lawn before it counts as moved
   var hold = null, suppressClick = false;
   // A hold ends with a click from the browser; it shouldn't also count as a tap.
   function takeSuppressedClick() { var was = suppressClick; suppressClick = false; return was; }
   function holdStart(lawn, ev) {
     if (drawing || hold || !ev.isPrimary) return;
-    hold = {
-      lawn: lawn, id: ev.pointerId, start: map.mouseEventToContainerPoint(ev), lifted: false, moved: false,
-      from: lawn.pts.map(function (p) { return map.latLngToContainerPoint(p); })
-    };
+    var p = map.mouseEventToContainerPoint(ev);
+    // at: where each finger is (by pointer id); second: the turning finger's id.
+    hold = { lawn: lawn, id: ev.pointerId, second: null, start: p, at: {}, lifted: false, moved: false, turned: false };
+    hold.at[ev.pointerId] = p;
     hold.timer = setTimeout(lift, HOLD_MS);
   }
   function lift() {
@@ -424,44 +407,89 @@ export function buildSatelliteHtml({
     select(null);
     clearHandles(hold.lawn);
     L.DomUtil.addClass(hold.lawn.shape.getElement(), 'lawn-lifted');
+    rebase();
     haptic('medium');
+  }
+  // Where a corner is on screen, to a fraction of a pixel (Leaflet's own conversion rounds to
+  // whole pixels, which would nudge the corners out of shape each time a lawn is moved).
+  function screenPoint(latlng) { return map.layerPointToContainerPoint(map.project(latlng).subtract(map.getPixelOrigin())); }
+  // The move goes on from where the lawn and the fingers are now (a finger was put down or lifted).
+  function rebase() {
+    hold.from = hold.lawn.pts.map(screenPoint);
+    hold.was = { a: hold.at[hold.id], b: hold.second === null ? null : hold.at[hold.second] };
+  }
+  // Carries the lawn along with the finger; with two, it also turns by as much as the line
+  // between them has, about the point halfway between them.
+  function follow() {
+    var a = hold.at[hold.id], was = hold.was, turn = 0, pivot = was.a, to = a;
+    if (hold.second !== null) {
+      var b = hold.at[hold.second];
+      turn = Math.atan2(b.y - a.y, b.x - a.x) - Math.atan2(was.b.y - was.a.y, was.b.x - was.a.x);
+      turn = Math.atan2(Math.sin(turn), Math.cos(turn)); // the short way round
+      pivot = was.a.add(was.b).divideBy(2);
+      to = a.add(b).divideBy(2);
+    }
+    if (!hold.moved && Math.abs(turn) < TURN_SLOP && to.distanceTo(pivot) < 4) return;
+    hold.moved = true;
+    var cos = Math.cos(turn), sin = Math.sin(turn);
+    hold.lawn.pts = hold.from.map(function (o) {
+      var x = o.x - pivot.x, y = o.y - pivot.y;
+      return map.containerPointToLatLng(L.point(to.x + x * cos - y * sin, to.y + x * sin + y * cos));
+    });
+    hold.lawn.shape.setLatLngs(hold.lawn.pts);
   }
   function endHold() {
     clearTimeout(hold.timer);
     if (hold.lifted && hold.lawn.shape.getElement()) L.DomUtil.removeClass(hold.lawn.shape.getElement(), 'lawn-lifted');
     hold = null;
   }
-  // Captured on the window, ahead of the map: once a lawn is picked up, the finger moves the
+  // Captured on the window, ahead of the map: once a lawn is picked up, the fingers move the
   // lawn, not the map.
   window.addEventListener('pointermove', function (ev) {
-    if (!hold || ev.pointerId !== hold.id) return;
+    if (!hold || !(ev.pointerId in hold.at)) return;
     var p = map.mouseEventToContainerPoint(ev);
+    hold.at[ev.pointerId] = p;
     if (!hold.lifted) {
       if (p.distanceTo(hold.start) > HOLD_SLOP) endHold(); // moving right away: it's a pan
       return;
     }
     ev.stopPropagation();
-    var dx = p.x - hold.start.x, dy = p.y - hold.start.y;
-    if (!hold.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
-    hold.moved = true;
-    hold.lawn.pts = hold.from.map(function (o) { return map.containerPointToLatLng(L.point(o.x + dx, o.y + dy)); });
-    hold.lawn.shape.setLatLngs(hold.lawn.pts);
+    follow();
   }, true);
-  ['touchmove', 'mousemove'].forEach(function (type) {
+  // Nor does a second finger start a pinch zoom of the map while a lawn is picked up.
+  ['touchstart', 'touchmove', 'mousemove'].forEach(function (type) {
     window.addEventListener(type, function (ev) { if (hold && hold.lifted) ev.stopPropagation(); }, true);
   });
+  window.addEventListener('pointerdown', function (ev) {
+    if (!hold || ev.pointerId === hold.id) return;
+    // A second finger before the lawn is picked up: it's a pinch zoom, not a hold.
+    if (!hold.lifted) { endHold(); return; }
+    ev.stopPropagation();
+    if (hold.second !== null) return; // a third finger does nothing
+    hold.second = ev.pointerId;
+    hold.at[ev.pointerId] = map.mouseEventToContainerPoint(ev);
+    hold.turned = true;
+    rebase();
+    haptic('light');
+  }, true);
   function holdEnd(ev) {
-    if (!hold || ev.pointerId !== hold.id) return;
+    if (!hold) return;
+    if (ev.pointerId === hold.second) {
+      // The turning finger lifted: the first one carries on dragging.
+      delete hold.at[hold.second];
+      hold.second = null;
+      rebase();
+      return;
+    }
+    if (ev.pointerId !== hold.id) return;
     var h = hold;
     endHold();
     if (!h.lifted) return;
-    if (h.moved) { select(h.lawn); emit(); }
+    if (h.moved || h.turned) { select(h.lawn); emit(); }
     else post({ type: 'lawnMenu', index: countedLawns().indexOf(h.lawn) }); // held still: offer to delete it
   }
   window.addEventListener('pointerup', holdEnd, true);
   window.addEventListener('pointercancel', holdEnd, true);
-  // A second finger (pinch zoom) cancels a hold that hasn't picked the lawn up yet.
-  window.addEventListener('pointerdown', function (ev) { if (hold && !hold.lifted && ev.pointerId !== hold.id) endHold(); }, true);
   document.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
 
   function useTool(tool, index) {
