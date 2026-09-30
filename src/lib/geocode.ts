@@ -76,8 +76,27 @@ type ReverseResult = {
   };
 };
 
+// Addresses looked up (or being looked up), by position: the intro screen starts the phone's,
+// so the Locate screen has it the moment it opens.
+const addresses = new Map<string, Promise<AddressQuery | null>>();
+
 /** The street address at a position, split into the form's fields. Throws on network failure. */
-export async function reverseGeocode({ latitude, longitude }: LatLng): Promise<AddressQuery | null> {
+export function reverseGeocode(spot: LatLng): Promise<AddressQuery | null> {
+  const key = `${spot.latitude},${spot.longitude}`;
+  let address = addresses.get(key);
+  if (!address) {
+    address = lookUpAddress(spot);
+    addresses.set(key, address);
+    // No answer (e.g. offline): ask again next time.
+    address.then(
+      (found) => found || addresses.delete(key),
+      () => addresses.delete(key),
+    );
+  }
+  return address;
+}
+
+async function lookUpAddress({ latitude, longitude }: LatLng): Promise<AddressQuery | null> {
   const result = await nominatim<ReverseResult>('reverse', {
     lat: String(latitude),
     lon: String(longitude),
