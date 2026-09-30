@@ -9,7 +9,8 @@ const { common, intro } = ui;
 
 // Lawnalyze UI.zip
 export default function IntroScreen() {
-  // Next is Locate, which goes to where the phone is: start finding it now.
+  // Next is Locate, which goes to where the phone is: find it (and its address) now, asking for
+  // permission here if needed, so Locate has it all the moment Get Started is tapped.
   useEffect(() => warmUpLocation(), []);
 
   return (

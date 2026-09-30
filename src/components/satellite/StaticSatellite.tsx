@@ -8,6 +8,8 @@ import type { MapLabel } from '@/lib/dimensions';
 import type { LatLng } from '@/lib/location';
 import { textWidthEm } from '@/ui/DesignText';
 
+import { LAWN_BLUE as BLUE, LAWN_FILL_OPACITY } from './satelliteHtml';
+
 // A still satellite view drawn natively: the Google satellite tiles laid out as images, with
 // the lawn outlines and any labels on top. Used for the maps you only look at (Home, Settings,
 // Lawn Square Footage). Unlike a WebView map it has nothing to lose while its tab is hidden, and
@@ -15,7 +17,6 @@ import { textWidthEm } from '@/ui/DesignText';
 
 const TILE = 256; // tile size in dp, as on the Leaflet maps (512px scale=2 tiles, drawn at 256)
 const MAX_TILE_ZOOM = 20;
-const BLUE = '#2F6BFF'; // same outline color as the Leaflet maps
 const LABEL_BOX = 160; // room (dp) a label can center itself in
 /** Closest zoom when fitting a small lawn (tiles stop at 20, so 21 is them drawn at double size). */
 const MAX_FIT_ZOOM = 21;
@@ -109,7 +110,7 @@ export function StaticSatellite({ width, height, center, zoom, outlines, fitPadd
               return `${s.x},${s.y}`;
             }).join(' ')}
             fill={BLUE}
-            fillOpacity={0.2}
+            fillOpacity={LAWN_FILL_OPACITY}
             stroke={BLUE}
             strokeWidth={3}
             strokeLinejoin="round"

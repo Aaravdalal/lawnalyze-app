@@ -14,46 +14,44 @@ const LAST_KNOWN = { maxAge: 30 * 60_000, requiredAccuracy: 100 };
 const REUSE_MS = 5 * 60_000;
 
 let found: { spot: LatLng; at: number } | null = null;
-// The lookup under way, if any, and whether it may ask for permission.
-let finding: { spot: Promise<LatLng | null>; asks: boolean } | null = null;
+// The lookup under way, if any: everyone who asks meanwhile gets the same one.
+let finding: Promise<LatLng | null> | null = null;
 
 /**
- * Where the phone is, as fast as it can be had: null if it can't be (location off, or not
- * allowed). `ask`: ask for permission (and on Android, to turn location on) if needed;
- * otherwise only look if the app is already allowed to.
+ * Where the phone is, as fast as it can be had, asking for permission (and on Android, to turn
+ * location on) if needed: null if it can't be had (location off, or not allowed).
  */
-export function findDevice(ask = true): Promise<LatLng | null> {
+export function findDevice(): Promise<LatLng | null> {
   if (found && Date.now() - found.at < REUSE_MS) return Promise.resolve(found.spot);
-  if (finding && (finding.asks || !ask)) return finding.spot;
-  // A lookup that couldn't ask may still come back with nothing: then look again, asking.
-  const before = finding?.spot ?? Promise.resolve(null);
-  const spot = before.then((earlier) => earlier ?? locate(ask));
-  finding = { spot, asks: ask };
-  spot.then((result) => {
-    if (finding?.spot === spot) finding = null;
-    if (result) found = { spot: result, at: Date.now() };
-  });
-  return spot;
+  if (!finding) {
+    const spot = locate();
+    finding = spot;
+    spot.then((result) => {
+      finding = null;
+      if (result) found = { spot: result, at: Date.now() };
+    });
+  }
+  return finding;
 }
 
 /**
- * Finds the phone, and the street address there, ahead of time if the app is already allowed to
- * (it never asks from here), so the Locate screen has both the moment it opens.
+ * Finds the phone and looks up the street address there ahead of time (asking for permission
+ * first if needed), so the Locate screen has both the moment it opens.
  */
 export function warmUpLocation() {
-  findDevice(false)
+  findDevice()
     .then((spot) => spot && reverseGeocode(spot))
     .catch(() => {});
 }
 
-async function locate(ask: boolean): Promise<LatLng | null> {
+async function locate(): Promise<LatLng | null> {
   try {
-    const { granted } = ask ? await Location.requestForegroundPermissionsAsync() : await Location.getForegroundPermissionsAsync();
+    const { granted } = await Location.requestForegroundPermissionsAsync();
     if (!granted) return null;
     const { coords } =
       // (Not supported everywhere, e.g. some browsers.)
       (await Location.getLastKnownPositionAsync(LAST_KNOWN).catch(() => null)) ??
-      (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, mayShowUserSettingsDialog: ask }));
+      (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
     return { latitude: coords.latitude, longitude: coords.longitude };
   } catch {
     return null;

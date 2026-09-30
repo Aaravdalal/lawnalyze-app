@@ -12,6 +12,11 @@ const ATTRIBUTION = '&copy; Google Maps Satellite';
 // Shown until the user's location is known.
 const US_OVERVIEW = { latitude: 39.5, longitude: -98.35, zoom: 3 };
 
+/** Lawn outlines and their corners (StaticSatellite draws them in it too). */
+export const LAWN_BLUE = '#0B5CFF';
+/** How strongly a lawn's area is tinted with it. */
+export const LAWN_FILL_OPACITY = 0.25;
+
 // Blue map pin marking the lawn's house.
 const PIN_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="26" height="40" viewBox="0 0 26 40">' +
@@ -105,19 +110,16 @@ export function buildSatelliteHtml({
     font: 7px/1.5 sans-serif; color: #333; background: rgba(255, 255, 255, 0.6);
     padding: 0 4px; margin: 0 ${num(inset)}px ${num(Math.round(inset / 2))}px 0; border-radius: 4px;
   }
-  /* Outline handles: big invisible touch targets (40px) around small visible dots. */
-  .corner, .mid { box-sizing: border-box; border-radius: 50%; }
+  /* A lawn's corners (placed while drawing, or dragged to reshape) are solid blue dots with a
+     white ring; the midpoints between them (drag one to add a corner) are the same dot, faded.
+     The reshaping handles sit in big invisible touch targets (40px). */
+  .corner, .mid { box-sizing: border-box; border-radius: 50%; background: ${LAWN_BLUE}; border: 3px solid #fff; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+  .corner { width: 18px; height: 18px; margin: 11px; }
+  .mid { width: 16px; height: 16px; margin: 12px; opacity: .7; }
   /* Zoomed out, the lawn is a speck: hide its editing handles (and their touch areas). */
   .zoomed-out .lawn-handle { display: none; }
-  .corner { width: 18px; height: 18px; margin: 11px; background: #2F6BFF; border: 3px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
-  .mid { width: 14px; height: 14px; margin: 13px; background: rgba(255,255,255,.85); border: 2px solid #2F6BFF; }
-  /* Corners placed while drawing; the first one pulses once tapping it would close the shape. */
-  .dot { box-sizing: border-box; border-radius: 50%; width: 12px; height: 12px; margin: 14px; background: #2F6BFF; border: 2.5px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.45); }
-  .dot.first { width: 16px; height: 16px; margin: 12px; }
-  .dot.first.ready { width: 22px; height: 22px; margin: 9px; background: #fff; border: 4px solid #2F6BFF; animation: close-me 1.1s ease-out infinite; }
-  @keyframes close-me { 0% { box-shadow: 0 0 0 0 rgba(47,107,255,.6); } 100% { box-shadow: 0 0 0 14px rgba(47,107,255,0); } }
   /* A lawn picked up (press and hold) to move. */
-  .leaflet-interactive.lawn-lifted { fill-opacity: .38; stroke-width: 4px; filter: drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
+  .leaflet-interactive.lawn-lifted { fill-opacity: .38; stroke-width: 5px; filter: drop-shadow(0 6px 8px rgba(0,0,0,.45)); }
   body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 </style>
 </head>
@@ -259,25 +261,27 @@ export function buildSatelliteHtml({
   }
 
   // ---- Lawn outlines ----
-  // Drawing: tap to place corners; a dashed blue line joins them in order. Once there are three,
-  // the first corner pulses: tap it to close the shape, which then fills in. (The pencil also
-  // closes it.) A finished lawn: tap it to reshape it (drag a corner; drag a midpoint to add
-  // one). Press and hold it to delete it, or hold and drag to move the whole lawn.
+  // Drawing: tap to place corners; a solid blue line joins them in order, and from the third
+  // one the area they close in is filled. Tap the first corner (or the pencil) to finish, which
+  // draws the last side. A finished lawn: tap it to reshape it (drag a corner; drag a midpoint
+  // to add one). Press and hold it to delete it, or hold and drag to move the whole lawn.
   var EDITABLE = ${editable ? 'true' : 'false'};
-  var BLUE = '#2F6BFF';
+  var BLUE = '${LAWN_BLUE}';
   var MAX_LAWNS = ${MAX_LAWNS};
   var CLOSE_RADIUS = 28; // px: a tap this close to the first corner closes the shape
   var HOLD_MS = 420; // press this long on a lawn to pick it up
   var HOLD_SLOP = 10; // px the finger may drift before the press counts as panning the map
   var lawns = [], active = null, drawing = null; // active: the lawn being reshaped; drawing: the one being drawn
   function handleIcon(cls) { return L.divIcon({ className: 'lawn-handle', html: '<div class="' + cls + '"></div>', iconSize: [40, 40], iconAnchor: [20, 20] }); }
-  function dotIcon(cls) { return L.divIcon({ className: 'lawn-dot', html: '<div class="' + cls + '"></div>', iconSize: [40, 40], iconAnchor: [20, 20] }); }
   var CORNER = handleIcon('corner'), MID = handleIcon('mid');
-  var DOT = dotIcon('dot'), FIRST = dotIcon('dot first'), FIRST_READY = dotIcon('dot first ready');
+  // Corners placed while drawing look the same, but can't be dragged yet.
+  var DOT = L.divIcon({ className: 'lawn-dot', html: '<div class="corner"></div>', iconSize: [40, 40], iconAnchor: [20, 20] });
 
-  function closedLawns() { return lawns.filter(function (l) { return l.closed; }); }
+  // The lawns that count (and are saved): the finished ones, and one being drawn once it has
+  // three corners, since its area already shows.
+  function countedLawns() { return lawns.filter(function (l) { return l.closed || l.pts.length >= 3; }); }
   function emit() {
-    post({ type: 'outlines', outlines: closedLawns().map(function (l) {
+    post({ type: 'outlines', outlines: countedLawns().map(function (l) {
       return l.pts.map(function (p) { return { latitude: p.lat, longitude: p.lng }; });
     }) });
   }
@@ -287,8 +291,8 @@ export function buildSatelliteHtml({
   function newLawn(points, closed) {
     var lawn = {
       pts: points, closed: closed, handles: [], mids: [],
-      shape: L.polygon([], { renderer: outlineRenderer, color: BLUE, weight: 3, fillColor: BLUE, fillOpacity: 0.2, interactive: EDITABLE }),
-      line: L.polyline([], { renderer: outlineRenderer, color: BLUE, weight: 3, dashArray: '8 8', lineCap: 'round', interactive: false })
+      shape: L.polygon([], { renderer: outlineRenderer, color: BLUE, weight: 4, lineJoin: 'round', fillColor: BLUE, fillOpacity: ${LAWN_FILL_OPACITY}, interactive: EDITABLE }),
+      line: L.polyline([], { renderer: outlineRenderer, color: BLUE, weight: 4, lineCap: 'round', lineJoin: 'round', interactive: false })
     };
     if (EDITABLE) {
       lawn.shape.on('click', function (e) {
@@ -314,19 +318,22 @@ export function buildSatelliteHtml({
   }
   function render(lawn) {
     clearHandles(lawn);
+    // Being drawn, the area has no line back to the first corner yet: only the finished lawn does.
+    lawn.shape.setStyle({ stroke: lawn.closed });
+    lawn.shape.setLatLngs(lawn.pts);
     if (!lawn.closed) {
-      // Being drawn: the corners so far, joined by a dashed line.
-      if (map.hasLayer(lawn.shape)) map.removeLayer(lawn.shape);
+      // Being drawn: the corners so far, joined by a line, and (from three) the area they close in.
+      if (lawn.pts.length >= 3) { if (!map.hasLayer(lawn.shape)) lawn.shape.addTo(map); }
+      else if (map.hasLayer(lawn.shape)) map.removeLayer(lawn.shape);
       lawn.line.setLatLngs(lawn.pts);
       if (!map.hasLayer(lawn.line)) lawn.line.addTo(map);
-      lawn.pts.forEach(function (p, i) {
-        var icon = i > 0 ? DOT : lawn.pts.length >= 3 ? FIRST_READY : FIRST;
-        lawn.handles.push(L.marker(p, { icon: icon, interactive: false, zIndexOffset: i === 0 ? 1000 : 900 }).addTo(map));
+      lawn.line.bringToFront();
+      lawn.pts.forEach(function (p) {
+        lawn.handles.push(L.marker(p, { icon: DOT, interactive: false, zIndexOffset: 900 }).addTo(map));
       });
       return;
     }
     if (map.hasLayer(lawn.line)) map.removeLayer(lawn.line);
-    lawn.shape.setLatLngs(lawn.pts);
     if (!map.hasLayer(lawn.shape)) lawn.shape.addTo(map);
     if (!EDITABLE || lawn !== active) return;
     // Reshaping: drag a corner to move it; drag a midpoint to add a corner there.
@@ -368,6 +375,7 @@ export function buildSatelliteHtml({
     if (pts.length >= 3 && map.latLngToContainerPoint(pts[0]).distanceTo(point) <= CLOSE_RADIUS) { closeShape(); return; }
     pts.push(latlng);
     render(drawing);
+    if (pts.length >= 3) emit();
     haptic('light');
   }
   function closeShape() {
@@ -448,7 +456,7 @@ export function buildSatelliteHtml({
     endHold();
     if (!h.lifted) return;
     if (h.moved) { select(h.lawn); emit(); }
-    else post({ type: 'lawnMenu', index: closedLawns().indexOf(h.lawn) }); // held still: offer to delete it
+    else post({ type: 'lawnMenu', index: countedLawns().indexOf(h.lawn) }); // held still: offer to delete it
   }
   window.addEventListener('pointerup', holdEnd, true);
   window.addEventListener('pointercancel', holdEnd, true);
@@ -465,7 +473,7 @@ export function buildSatelliteHtml({
       startNew();
     } else if (tool === 'delete') {
       // A given lawn (from its hold menu), or else the one being drawn or reshaped, or the last.
-      var target = index !== undefined ? closedLawns()[index] : drawing || active || lawns[lawns.length - 1];
+      var target = index !== undefined ? countedLawns()[index] : drawing || active || lawns[lawns.length - 1];
       if (!target) return;
       removeLawn(target);
       emit();
