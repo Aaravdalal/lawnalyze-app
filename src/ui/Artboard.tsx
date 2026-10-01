@@ -9,6 +9,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ui, type UiAsset } from './assets';
+import { GrowPressable } from './GrowPressable';
 
 // Every screen is laid out on the 340 x 640 Figma frame and scaled to fit the device.
 export const DESIGN_WIDTH = 340;
@@ -170,7 +171,7 @@ type PressableLayerProps = LayerProps & {
   children?: ReactNode;
 };
 
-/** A Figma layer that acts as a button. */
+/** A Figma layer that acts as a button: it slightly enlarges while pressed. */
 export function PressableLayer({
   asset,
   x,
@@ -188,14 +189,14 @@ export function PressableLayer({
   // Grow around the center (chin layers are already centered on their y).
   const rect = useRect({ x: x - (w - asset.w) / 2, y: anchor === 'chin' ? y : y - (h - asset.h) / 2, anchor }, w, h);
   return (
-    <Pressable
+    <GrowPressable
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [rect, { opacity: pressed ? 0.75 : 1 }]}
+      style={rect}
     >
       {/* Explicit size: Android otherwise draws high-res exports at their pixel size. */}
       <Image
@@ -204,7 +205,7 @@ export function PressableLayer({
         style={{ position: 'absolute', left: 0, top: 0, width: rect.width, height: rect.height }}
       />
       {children}
-    </Pressable>
+    </GrowPressable>
   );
 }
 

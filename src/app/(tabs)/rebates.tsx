@@ -9,6 +9,7 @@ import { MORE_REBATES, REBATE_FINDER_URL, useRebates, type Rebate } from '@/lib/
 import { formatArea } from '@/lib/units';
 import { Artboard, TAB_CHIN_DROP, Layer, useFrame, useRect } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
+import { GrowPressable } from '@/ui/GrowPressable';
 
 const { common, rebates: art } = ui;
 
@@ -149,15 +150,15 @@ function BlueButton({ label, onPress, onLongPress }: { label: string; onPress: (
   const rect = useRect({ x: BUTTON.x, y: BUTTON.y }, BUTTON.w, BUTTON.h);
   const { scale: s } = useFrame();
   return (
-    <Pressable
+    <GrowPressable
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
       onLongPress={onLongPress}
-      style={({ pressed }) => [rect, styles.button, { borderRadius: (BUTTON.h / 2) * s, borderWidth: 1.5 * s, opacity: pressed ? 0.8 : 1 }]}
+      style={[rect, styles.button, { borderRadius: (BUTTON.h / 2) * s, borderWidth: 1.5 * s }]}
     >
       <Text style={[styles.buttonLabel, { fontSize: 17 * s }]}>{label}</Text>
-    </Pressable>
+    </GrowPressable>
   );
 }
 

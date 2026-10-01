@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Modal, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { DESIGN_WIDTH } from './Artboard';
+import { GrowPressable } from './GrowPressable';
 
 type Props = {
   visible: boolean;
@@ -30,31 +31,31 @@ export function Dialog({ visible, title, message, onClose, buttonLabel = 'Okay',
           {!!message && <Text style={[styles.message, { fontSize: 14 * s, lineHeight: 20 * s }]}>{message}</Text>}
           {children}
           {action && (
-            <Pressable
+            <GrowPressable
               accessibilityRole="button"
               accessibilityLabel={action.label}
               onPress={action.onPress}
-              style={({ pressed }) => [
+              style={[
                 styles.button,
                 action.destructive && styles.destructive,
-                { height: 44 * s, borderRadius: 22 * s, marginTop: 10 * s, opacity: pressed ? 0.8 : 1 },
+                { height: 44 * s, borderRadius: 22 * s, marginTop: 10 * s },
               ]}
             >
               <Text style={[styles.buttonLabel, { fontSize: 16 * s }]}>{action.label}</Text>
-            </Pressable>
+            </GrowPressable>
           )}
-          <Pressable
+          <GrowPressable
             accessibilityRole="button"
             accessibilityLabel={buttonLabel}
             onPress={onClose}
-            style={({ pressed }) => [
+            style={[
               styles.button,
               action && styles.secondary,
-              { height: 44 * s, borderRadius: 22 * s, marginTop: (action ? 2 : 10) * s, opacity: pressed ? 0.8 : 1 },
+              { height: 44 * s, borderRadius: 22 * s, marginTop: (action ? 2 : 10) * s },
             ]}
           >
             <Text style={[styles.buttonLabel, action && styles.secondaryLabel, { fontSize: 16 * s }]}>{buttonLabel}</Text>
-          </Pressable>
+          </GrowPressable>
         </View>
       </View>
     </Modal>
