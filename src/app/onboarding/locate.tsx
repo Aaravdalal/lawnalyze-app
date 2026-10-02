@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAppState } from '@/lib/app-state';
 import { geocodeAddress, reverseGeocode, sameQuery, trimmedQuery as trimmed, type AddressQuery } from '@/lib/geocode';
 import { distanceMeters, findDevice, type LatLng } from '@/lib/location';
+import { useScreenShown } from '@/lib/screen-shown';
 import { AddressFields } from '@/ui/AddressFields';
 import { Artboard, BUTTON_GROW, Layer, PressableLayer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
@@ -11,7 +12,7 @@ import { Dialog } from '@/ui/Dialog';
 import { ButtonSpinner } from '@/ui/LoaderMorphing';
 import { SatelliteSlot } from '@/ui/SatelliteSlot';
 
-const { common, locate } = ui;
+const { locate } = ui;
 
 // The card on this screen is taller than in Figma (shorter green chin), so the content is
 // moved down and spread out by these design-pt amounts.
@@ -20,6 +21,12 @@ const SHIFT = { header: 8, address: 16, cityState: 26, map: 36 };
 type Located = { query: AddressQuery; spot: LatLng };
 
 const EMPTY_QUERY: AddressQuery = { address: '', city: '', state: '' };
+/**
+ * The phone's address (usually found before the screen even opens) fills in, with the boxes'
+ * green surge, this long (ms) after the screen is all the way in: the empty boxes show for a
+ * moment first, so it reads as the location arriving.
+ */
+const FILL_AFTER_SHOWN_MS = 200;
 /** Editing a saved lawn from closer than this (meters), you're at it: keep its saved address. */
 const AT_SAVED_LAWN_M = 150;
 
@@ -51,26 +58,46 @@ export default function LocateScreen() {
   // saved lawn, that happens only if you're somewhere else: standing at the lawn, its saved
   // address stays. Without permission, the user types their address and taps Find My Lawn.
   const [savedLawn] = useState(lawn);
+  // Nothing moves until the screen is properly on screen, since it may have been built ahead of
+  // time off to the side (see the intro), or still be coming in (on a phone, building it, the
+  // map most of all, can take longer than finding the address). Then the map flies in and the
+  // boxes fill in with their green surge, where they can be seen.
+  const shown = useScreenShown();
   useEffect(() => {
     let active = true;
     const opened = trimmed(formRef.current);
     // Don't overwrite anything the user has typed since the screen opened.
     const untouched = () => sameQuery(trimmed(formRef.current), opened);
+    const showSavedLawn = () => {
+      if (!savedLawn) return;
+      const { address, city, state } = savedLawn;
+      setLocated((current) => current ?? { query: { address, city, state }, spot: savedLawn });
+    };
     findDevice().then(async (spot) => {
+      // The address lookup starts now, unless the intro screen has started it already.
+      const lookup = spot && reverseGeocode(spot).catch(() => null);
+      await shown;
+      const shownAt = Date.now();
+      const fillTime = () => new Promise((done) => setTimeout(done, shownAt + FILL_AFTER_SHOWN_MS - Date.now()));
       if (!active) return;
-      // No location, the user is typing a different address, or they're at the saved lawn:
-      // show the saved lawn (if any).
-      if (!spot || !untouched() || (savedLawn && distanceMeters(spot, savedLawn) < AT_SAVED_LAWN_M)) {
-        if (savedLawn) {
-          const { address, city, state } = savedLawn;
-          setLocated((current) => current ?? { query: { address, city, state }, spot: savedLawn });
-        }
+      // No location, or the user is already typing a different address: show the saved lawn (if any).
+      if (!spot || !untouched()) {
+        showSavedLawn();
         return;
       }
-      // The map goes there right away; the address follows once it's looked up (usually it
-      // already has been, from the intro screen).
+      // At the saved lawn: its address (already in the boxes) stays, and they surge as the
+      // location confirms it.
+      if (savedLawn && distanceMeters(spot, savedLawn) < AT_SAVED_LAWN_M) {
+        showSavedLawn();
+        await fillTime();
+        if (active && untouched()) setAutofills((count) => count + 1);
+        return;
+      }
+      // The map flies there now; the address follows once it's looked up (usually it already
+      // has been, from the intro screen).
       setLocated({ query: savedLawn ? EMPTY_QUERY : opened, spot });
-      const address = await reverseGeocode(spot).catch(() => null);
+      const address = await lookup;
+      await fillTime();
       if (!active || !address || !untouched()) return;
       setForm(address);
       setAutofills((count) => count + 1);
@@ -79,7 +106,7 @@ export default function LocateScreen() {
     return () => {
       active = false;
     };
-  }, [savedLawn]);
+  }, [savedLawn, shown]);
 
   async function findMyLawn() {
     if (searching) return;
@@ -113,15 +140,8 @@ export default function LocateScreen() {
   }
 
   return (
-    <Artboard
-      cardBottom={548}
-      compactChin
-      glows={[
-        { asset: common.glow, x: -169, y: 0 },
-        { asset: common.glow, x: 8, y: 21 },
-        { asset: common.glow, x: 26, y: -133 },
-      ]}
-    >
+    // Glows: drawn behind all the setup screens (see _layout).
+    <Artboard cardBottom={548} compactChin>
       <Layer asset={locate.iconLocate} x={32} y={24 + SHIFT.header} />
       <Layer asset={locate.titleLocateYourLawn} x={76} y={33 + SHIFT.header} />
       <AddressFields

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { LatLng } from '@/lib/location';
 
-import { buildSatelliteHtml, type MapCommand, type MapEvent, type MapTool, type SatelliteOptions } from './satelliteHtml';
+import { buildSatelliteHtml, type MapCommand, type MapTool, type PageEvent, type SatelliteOptions } from './satelliteHtml';
 
 /**
  * A tool button press; `id` changes on every press so repeated taps of one tool still send.
@@ -12,7 +12,7 @@ export type ToolPress = { tool: MapTool; id: number; lawn?: number };
 
 export type SatelliteMapProps = SatelliteOptions & {
   toolPress?: ToolPress | null;
-  onEvent?: (event: MapEvent) => void;
+  onEvent?: (event: PageEvent) => void;
 };
 
 const sameSpot = (a: LatLng | null, b: LatLng | null) =>

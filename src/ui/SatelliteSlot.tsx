@@ -1,9 +1,10 @@
-import { View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
 
 import { SatelliteMap } from '@/components/satellite/SatelliteMap';
-import type { Insets, MapEvent } from '@/components/satellite/satelliteHtml';
+import type { Insets, MapEvent, PageEvent } from '@/components/satellite/satelliteHtml';
 import { StaticSatellite } from '@/components/satellite/StaticSatellite';
-import type { ToolPress } from '@/components/satellite/useSatellitePage';
+import type { SatelliteMapProps, ToolPress } from '@/components/satellite/useSatellitePage';
 import type { Outline } from '@/lib/app-state';
 import type { MapLabel } from '@/lib/dimensions';
 import type { LatLng } from '@/lib/location';
@@ -46,6 +47,16 @@ const NO_OUTLINES: Outline[] = [];
 const FIT_PADDING = 14;
 /** ...and with side lengths shown: tags on the left/right edges stick out about half their width. */
 export const DIMENSIONS_FIT_PADDING = 26;
+/** An empty map: what shows before any imagery is in. */
+const MAP_BLANK = '#2c3a30';
+/** A live map fades in over this long (ms) once its first view's imagery is all in... */
+const MAP_REVEAL_MS = 250;
+/**
+ * ...or after this long (ms) anyway. (The page shows itself a while after it's on screen even if
+ * some imagery won't load; this is for a page that never gets going at all.)
+ */
+const MAP_REVEAL_ANYWAY_MS = 8000;
+const useNativeDriver = Platform.OS !== 'web';
 
 /** Live satellite imagery in the spot of the placeholder satellite photo from Figma. */
 export function SatelliteSlot({
@@ -78,7 +89,7 @@ export function SatelliteSlot({
     <View
       style={[
         rect,
-        { borderRadius: cornerRadius, overflow: 'hidden', backgroundColor: '#2c3a30' },
+        { borderRadius: cornerRadius, overflow: 'hidden', backgroundColor: MAP_BLANK },
         bordered && { borderWidth: border, borderColor: '#CCCDCE' },
       ]}
     >
@@ -96,7 +107,7 @@ export function SatelliteSlot({
           labelSize={9 * scale}
         />
       ) : (
-        <SatelliteMap
+        <LiveMap
           // Rebuilt when the outlines change from outside (e.g. edited from Settings).
           key={editable ? 'editable' : JSON.stringify(outlines)}
           center={center}
@@ -122,3 +133,41 @@ export function SatelliteSlot({
     </View>
   );
 }
+
+type LiveMapProps = Omit<SatelliteMapProps, 'onEvent'> & { onEvent?: (event: MapEvent) => void };
+
+/**
+ * A live map that shows up all at once: until its first view's imagery is in, a cover the color
+ * of an empty map sits over it, then fades away (rather than the tiles popping in one by one).
+ * The cover fades, not the map: Android can draw a map badly while it's see-through.
+ */
+function LiveMap({ onEvent, ...props }: LiveMapProps) {
+  const [cover] = useState(() => new Animated.Value(1));
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (ready) {
+      Animated.timing(cover, { toValue: 0, duration: MAP_REVEAL_MS, useNativeDriver }).start();
+      return;
+    }
+    const anyway = setTimeout(() => setReady(true), MAP_REVEAL_ANYWAY_MS);
+    return () => clearTimeout(anyway);
+  }, [ready, cover]);
+  const onPageEvent = useCallback(
+    (event: PageEvent) => {
+      if (event.type === 'ready') setReady(true);
+      else onEvent?.(event);
+    },
+    [onEvent],
+  );
+
+  return (
+    <>
+      <SatelliteMap {...props} onEvent={onPageEvent} />
+      <Animated.View style={[StyleSheet.absoluteFill, styles.cover, { opacity: cover }]} />
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  cover: { backgroundColor: MAP_BLANK, pointerEvents: 'none' },
+});

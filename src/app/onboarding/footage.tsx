@@ -21,21 +21,14 @@ export default function FootageScreen() {
 
   function confirm() {
     completeOnboarding();
-    // Clear the onboarding (or Settings edit) screens so Back doesn't return to them.
-    if (router.canDismiss()) router.dismissAll();
-    router.replace('/home');
+    // Home takes the setup screens' place, so Back doesn't return to them: the tabs come back
+    // from under them (Settings > Edit Lawn), or are put in their place (first setup).
+    router.dismissTo('/home');
   }
 
   return (
-    <Artboard
-      cardBottom={548}
-      compactChin
-      glows={[
-        { asset: common.glow, x: 18, y: 48 },
-        { asset: common.glow, x: 50, y: -28 },
-        { asset: common.glow, x: -145, y: -150 },
-      ]}
-    >
+    // Glows: drawn behind all the setup screens (see _layout).
+    <Artboard cardBottom={548} compactChin>
       <Layer asset={common.iconBox} x={32} y={24 + SHIFT.header} />
       <Layer asset={footage.iconRuler} x={28} y={27 + SHIFT.header} />
       <Layer asset={footage.titleLawnSquareFootage} x={77} y={33 + SHIFT.header} />

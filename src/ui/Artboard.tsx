@@ -89,7 +89,7 @@ type ArtboardProps = {
 
 export function Artboard({ cardBottom, glows = [], gradientY, compactChin = false, children }: ArtboardProps) {
   const metrics = useFrameMetrics(compactChin);
-  const { width, height } = metrics;
+  const { height } = metrics;
   // On Android the window height can exclude the gesture bar, so measure what's really drawn.
   const [drawnHeight, setDrawnHeight] = useState<number | null>(null);
   const bottom = drawnHeight ?? height;
@@ -102,20 +102,28 @@ export function Artboard({ cardBottom, glows = [], gradientY, compactChin = fals
         style={styles.root}
         onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
       >
-        {gradientY !== undefined && (
-          // Stretched up to the top of the screen so it also fills the status bar area.
-          <Image
-            source={ui.common.gradient.source}
-            resizeMode="stretch"
-            style={[styles.abs, { left: 0, top: 0, width, height: frame.top(gradientY + ui.common.gradient.h) }]}
-          />
-        )}
+        {gradientY !== undefined && <Gradient y={gradientY} />}
         {glows.map((glow, i) => (
           <Layer key={i} asset={glow.asset} x={glow.x} y={glow.y} />
         ))}
         {children}
       </View>
     </FrameContext.Provider>
+  );
+}
+
+/**
+ * The green-to-white gradient at the top of the intro screens, ending at design y + its height.
+ * Stretched up to the top of the screen so it also fills the status bar area.
+ */
+export function Gradient({ y }: { y: number }) {
+  const frame = useFrame();
+  return (
+    <Image
+      source={ui.common.gradient.source}
+      resizeMode="stretch"
+      style={[styles.abs, { left: 0, top: 0, width: frame.width, height: frame.top(y + ui.common.gradient.h) }]}
+    />
   );
 }
 

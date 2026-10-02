@@ -1,10 +1,11 @@
 import { router, useSegments } from 'expo-router';
 import { Tabs, type BottomTabNavigationOptions } from 'expo-router/js-tabs';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Platform } from 'react-native';
+import { Animated, Platform } from 'react-native';
 import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 
 import { TAB_CHIN_DROP, useFrameMetrics } from '@/ui/Artboard';
+import { PAGE_SLIDE as SLIDE } from '@/ui/motion';
 import { TabGlows } from '@/ui/TabGlows';
 import { TabNav } from '@/ui/TabNav';
 
@@ -22,10 +23,6 @@ const SLOP = 16;
 /** Let go past this share of the screen's width, or flick faster than this (dp/s), to change tab. */
 const COMMIT_SHARE = 0.25;
 const FLICK_VELOCITY = 450;
-/** Past the first or last tab there's nothing to pull in, so the screen only gives a little. */
-const EDGE_GIVE = 0.3;
-/** How screens slide over to a new tab, swiped or tapped on the bar. */
-const SLIDE = { duration: 280, easing: Easing.out(Easing.cubic) };
 /** A swipe that doesn't change tab springs back. */
 const SNAP_BACK = { stiffness: 400, damping: 38, mass: 1 };
 /**
@@ -77,8 +74,9 @@ export default function TabsLayout() {
   // How far (dp) the finger has moved sideways since the swipe took over. The swipe sets it on
   // the native side, with no JS in between, so the screens keep right up with the finger.
   const [finger] = useState(() => new Animated.Value(0));
-  // How much of that the screens follow dragged back (right) and on (left): all of it toward a
-  // neighbouring tab, just a little (EDGE_GIVE) past the first or last one.
+  // Whether the screens follow it dragged back (right) and on (left): 1 toward a neighbouring
+  // tab, 0 toward one that isn't there (before Home or after Settings), so they stay put. (A
+  // swipe can't start that way, but a finger can turn round once it has.)
   const [follow] = useState(() => ({ back: new Animated.Value(1), on: new Animated.Value(1) }));
   const drag: Drag = useMemo(
     () =>
@@ -95,8 +93,8 @@ export default function TabsLayout() {
   const resting = useRef(true);
   const followTab = useCallback(
     (tab: number) => {
-      follow.back.setValue(tab > 0 ? 1 : EDGE_GIVE);
-      follow.on.setValue(tab < TABS.length - 1 ? 1 : EDGE_GIVE);
+      follow.back.setValue(tab > 0 ? 1 : 0);
+      follow.on.setValue(tab < TABS.length - 1 ? 1 : 0);
     },
     [follow],
   );
@@ -134,7 +132,9 @@ export default function TabsLayout() {
 
   // Swipe left or right anywhere on the card: the screens follow the finger, the next (or
   // previous) tab sliding in beside the current one. Let go far enough along, or flick, and it
-  // carries on to that tab; otherwise it springs back. (Vertical drags, like rearranging
+  // carries on to that tab; otherwise it springs back. There's no tab before Home or after
+  // Settings, so there a swipe only starts toward the one next door (left on Home, right on
+  // Settings): the other way, the screen doesn't move at all. (Vertical drags, like rearranging
   // sections, don't count.) The green chin is left out: the nav bar there has its own swipes.
   // The gesture measures from where it took over, so the screens start following from there.
   const onSwipe = useMemo(() => Animated.event([{ nativeEvent: { translationX: finger } }], { useNativeDriver }), [finger]);
@@ -213,7 +213,8 @@ export default function TabsLayout() {
     <PanGestureHandler
       enabled={current >= 0}
       hitSlop={{ bottom: -Math.max(0, size.height - chinTop) }}
-      activeOffsetX={[-SLOP, SLOP]}
+      // A single offset arms one side only: -SLOP starts on a move left, SLOP on a move right.
+      activeOffsetX={current === 0 ? -SLOP : current === TABS.length - 1 ? SLOP : [-SLOP, SLOP]}
       failOffsetY={[-SLOP, SLOP]}
       onGestureEvent={onSwipe}
       onHandlerStateChange={onSwipeState}

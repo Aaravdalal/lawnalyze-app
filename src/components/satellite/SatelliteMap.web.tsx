@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-import { MAP_EVENT_SOURCE, type MapCommand, type MapEvent } from './satelliteHtml';
+import { MAP_EVENT_SOURCE, type MapCommand, type PageEvent } from './satelliteHtml';
 import { useSatellitePage, type SatelliteMapProps } from './useSatellitePage';
 
 /** Web preview of the satellite map: the same page, rendered in an iframe. */
@@ -16,7 +16,7 @@ export function SatelliteMap(props: SatelliteMapProps) {
     if (!onEvent) return;
     const listener = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.data?.source !== MAP_EVENT_SOURCE) return;
-      onEvent(event.data as MapEvent);
+      onEvent(event.data as PageEvent);
     };
     window.addEventListener('message', listener);
     return () => window.removeEventListener('message', listener);

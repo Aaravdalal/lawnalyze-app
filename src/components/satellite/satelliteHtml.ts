@@ -68,6 +68,9 @@ export type MapEvent =
   /** Something to feel: a corner placed (light), a shape closed or a lawn picked up (medium). */
   | { type: 'haptic'; style: 'light' | 'medium' };
 
+/** Everything the page sends, including one the map's own slot handles: the first view's imagery is all in. */
+export type PageEvent = MapEvent | { type: 'ready' };
+
 /** Tags page -> app messages on web, where other frames can post to the window too. */
 export const MAP_EVENT_SOURCE = 'lawnalyze-map';
 
@@ -154,6 +157,19 @@ export function buildSatelliteHtml({
     // extra rows around the view so moving around shows imagery instantly.
     updateWhenIdle: false, updateInterval: 100, keepBuffer: 6
   }).addTo(map);
+  // The app shows the map once its first view's imagery is all in, rather than tiles popping in
+  // (or, if some are slow, once it's been on screen a while). Only once it's on screen: a map
+  // built while hidden has nothing to load yet.
+  var ready = false, readyAnyway = null;
+  function onScreen() { var el = map.getContainer(); return el.clientWidth > 0 && el.clientHeight > 0; }
+  function showMap() {
+    if (ready) return;
+    ready = true;
+    clearTimeout(readyAnyway);
+    post({ type: 'ready' });
+  }
+  function waitToShowMap() { if (!ready && !readyAnyway && onScreen()) readyAnyway = setTimeout(showMap, 2500); }
+  tiles.on('load', function () { if (onScreen()) showMap(); });
 
   // Keep imagery from going grey: retry tiles that fail to load (e.g. a brief refusal from the
   // tile server), and reload missing tiles when the map is resized or shown again (a hidden
@@ -189,7 +205,7 @@ export function buildSatelliteHtml({
   var lastSize = '';
   if (window.ResizeObserver) new ResizeObserver(function () {
     var el = map.getContainer(), size = el.clientWidth + 'x' + el.clientHeight;
-    if (size !== lastSize) { lastSize = size; refresh(); }
+    if (size !== lastSize) { lastSize = size; refresh(); waitToShowMap(); }
   }).observe(map.getContainer());
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
   // Safety net: every few seconds, repair a view that has broken or missing tiles.
@@ -205,6 +221,7 @@ export function buildSatelliteHtml({
   }, 2500);
 
   map.setView([${num(start.latitude)}, ${num(start.longitude)}], ${num(start.zoom)});
+  waitToShowMap();
   updateHandleVisibility();
 
   function post(message) {

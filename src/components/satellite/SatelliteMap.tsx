@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
-import type { MapCommand, MapEvent } from './satelliteHtml';
+import type { MapCommand, PageEvent } from './satelliteHtml';
 import { useSatellitePage, type SatelliteMapProps } from './useSatellitePage';
 
 /** Live satellite imagery (Leaflet + Google satellite tiles) in a WebView. */
@@ -26,7 +26,7 @@ function SatellitePage({ onCrash, ...props }: SatelliteMapProps & { onCrash: () 
   const onMessage = useCallback(
     (event: WebViewMessageEvent) => {
       try {
-        onEvent?.(JSON.parse(event.nativeEvent.data) as MapEvent);
+        onEvent?.(JSON.parse(event.nativeEvent.data) as PageEvent);
       } catch {
         // Not one of our messages.
       }

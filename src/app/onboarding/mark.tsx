@@ -129,15 +129,8 @@ export default function MarkScreen() {
   }
 
   return (
-    <Artboard
-      cardBottom={548}
-      compactChin
-      glows={[
-        { asset: common.glow, x: 221, y: -148 },
-        { asset: common.glow, x: -38, y: -137 },
-        { asset: common.glow, x: 19, y: 49 },
-      ]}
-    >
+    // Glows: drawn behind all the setup screens (see _layout).
+    <Artboard cardBottom={548} compactChin>
       <Layer asset={common.iconBox} x={32} y={24 + SHIFT.header} />
       <Layer asset={mark.iconPencil} x={40} y={32 + SHIFT.header} />
       <Layer asset={mark.titleMarkYourLawn} x={84} y={33 + SHIFT.header} />
