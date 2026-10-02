@@ -116,6 +116,8 @@ export default function TabsLayout() {
   useEffect(() => () => clearTimeout(handoff.current), []);
   // The next tab change comes from a swipe (the nav bar's pill then slides with the screens).
   const swiped = useRef(false);
+  // Switches tab the way tapping it does (see TabNav's switchToRef).
+  const switchTab = useRef<((name: string) => void) | null>(null);
   const takeSwiped = useCallback(() => {
     const was = swiped.current;
     swiped.current = false;
@@ -163,7 +165,8 @@ export default function TabsLayout() {
           }, HANDOFF_MS);
         }
         swiped.current = true;
-        router.navigate(`/${TABS[to]}`);
+        if (switchTab.current) switchTab.current(TABS[to]);
+        else router.navigate(`/${TABS[to]}`);
       } else {
         release(Animated.spring(finger, { toValue: 0, velocity: e.velocityX, ...SNAP_BACK, useNativeDriver }));
       }
@@ -176,7 +179,9 @@ export default function TabsLayout() {
   const tabs = useMemo(
     () => (
       <Tabs
-        tabBar={(props) => <TabNav {...props} drag={drag} pageWidth={size.width} takeSwiped={takeSwiped} swipeSlide={SLIDE} />}
+        tabBar={(props) => (
+          <TabNav {...props} drag={drag} pageWidth={size.width} takeSwiped={takeSwiped} swipeSlide={SLIDE} switchToRef={switchTab} />
+        )}
         // Keep every tab mounted and attached, so switching tabs is instant and nothing reloads.
         detachInactiveScreens={false}
         screenListeners={({ route }) => ({

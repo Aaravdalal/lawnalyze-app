@@ -1,5 +1,5 @@
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View, type GestureResponderEvent } from 'react-native';
 
 import { TAB_CHIN_DROP, useFrameMetrics } from './Artboard';
@@ -60,6 +60,12 @@ type Props = BottomTabBarProps & {
   takeSwiped?: () => boolean;
   /** The screens' slide, for the above. */
   swipeSlide?: { duration: number; easing: (t: number) => number };
+  /**
+   * Filled in with a way to switch to a tab (by route name) the way tapping it does, for the
+   * swipe on the screens. (Unlike `router.navigate`, it doesn't hand the tab new route params,
+   * which would re-render its whole screen just as the slide starts.)
+   */
+  switchToRef?: RefObject<((name: string) => void) | null>;
 };
 
 /**
@@ -67,7 +73,7 @@ type Props = BottomTabBarProps & {
  * (and the pills beside it follow), along with the dot underneath. Mid-swipe, the pill moves
  * along with the screens.
  */
-export function TabNav({ state, navigation, drag, pageWidth, takeSwiped, swipeSlide }: Props) {
+export function TabNav({ state, navigation, drag, pageWidth, takeSwiped, swipeSlide, switchToRef }: Props) {
   const frame = useFrameMetrics(TAB_CHIN_DROP);
   const s = frame.scale;
   const index = state.index;
@@ -113,6 +119,14 @@ export function TabNav({ state, navigation, drag, pageWidth, takeSwiped, swipeSl
     }
     if (next !== index) navigation.navigate(state.routes[next].name);
   };
+
+  useEffect(() => {
+    if (!switchToRef) return;
+    switchToRef.current = (name) => navigation.navigate(name);
+    return () => {
+      switchToRef.current = null;
+    };
+  }, [switchToRef, navigation]);
 
   const previousIndex = useRef(index);
   useEffect(() => {

@@ -2,9 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
 import type { Lawn, Units } from './app-state';
-import type { Estimate } from './estimate';
 import { formatDollars } from './format';
-import { formatPricePerArea, formatWater } from './units';
+import { formatPricePerArea } from './units';
 
 // Rebates for the lawn's area, from two sources:
 // 1. Lawn-replacement ("cash for grass") programs from the big water agencies, checked on
@@ -12,9 +11,11 @@ import { formatPricePerArea, formatWater } from './units';
 // 2. EPA WaterSense's rebate list (api.epa.gov/watersense): utilities' rebates for smart
 //    irrigation controllers, efficient sprinklers and irrigation checkups, matched by the
 //    lawn's state and city/county. It has no dollar amounts.
-// The lawn's county comes from the FCC's free Census block lookup.
+// The lawn's county comes from the FCC's free Census block lookup, or the Census Bureau's
+// geocoder if that's down, or (offline) the lawn's city.
 
-export type RebateKind = 'lawn' | 'irrigation' | 'survey';
+/** Replacing lawn, better watering, catching rain or reusing graywater, and checkups. */
+export type RebateKind = 'lawn' | 'irrigation' | 'reuse' | 'survey';
 
 export type Rebate = {
   id: string;
@@ -22,12 +23,10 @@ export type Rebate = {
   provider: string;
   kind: RebateKind;
   url: string;
-  /** What you'd get, e.g. "Up to $1,300" for this lawn, "$2 per sq ft" or "Free". */
+  /** What you'd get, e.g. "Up to $1,300" for this lawn, "$2 per sq ft" or "$200". */
   amount: string | null;
   /** Rebate dollars for this lawn (for ranking); 0 when the program doesn't say. */
   dollars: number;
-  /** Water and money saved each year, e.g. "Saves about 24,300 gallons ($188) a year". */
-  savings: string | null;
   note: string;
 };
 
@@ -43,16 +42,22 @@ type Program = {
   cities?: string[];
   /** $ per sq ft of lawn replaced: `rate` for the first `upTo` sq ft, then `thenRate`; at most `max`. */
   perSqFt?: { rate: number; upTo?: number; thenRate?: number; max?: number };
-  amount?: string;
+  /** $ per sq ft where the program doesn't say how much it pays at most: shown as the rate. */
+  rate?: number;
+  /** A set amount; `more` pays `amount` in the cities listed instead. */
+  pays?: { dollars: number; more?: { dollars: number; cities: string[] } };
   note: string;
 };
 
+// Valley Water's programs, as on their site in October 2026 (landscape-rebates, and the
+// laundry-to-landscape page): the landscape ones need approval before any work starts.
 const VALLEY_WATER = 'https://www.valleywater.org/saving-water/rebates-surveys/landscape-rebates';
+const VALLEY_WATER_PORTAL = 'https://valleywater.dropletportal.com';
 
 const PROGRAMS: Program[] = [
   {
     id: 'valley-water-landscape',
-    name: 'Landscape Rebate',
+    name: 'Landscape Conversion Rebate',
     provider: 'Valley Water',
     kind: 'lawn',
     url: VALLEY_WATER,
@@ -62,24 +67,65 @@ const PROGRAMS: Program[] = [
     note: '$2 per sq ft to replace lawn with low-water plants. Get approved before removing any grass.',
   },
   {
+    id: 'valley-water-mulch',
+    name: 'Lawn to Mulch Rebate',
+    provider: 'Valley Water',
+    kind: 'lawn',
+    url: `${VALLEY_WATER_PORTAL}/lawn-to-mulch-requirements`,
+    state: 'CA',
+    counties: ['Santa Clara'],
+    rate: 1,
+    note: '$1 per sq ft to cover lawn with mulch instead. Get approved before removing any grass.',
+  },
+  {
     id: 'valley-water-irrigation',
     name: 'Irrigation Upgrade Rebate',
     provider: 'Valley Water',
     kind: 'irrigation',
-    url: VALLEY_WATER,
+    url: `${VALLEY_WATER_PORTAL}/irrigation-equipment-requirements`,
     state: 'CA',
     counties: ['Santa Clara'],
     note: 'For weather-based sprinkler controllers, rain sensors and more. Get approved first.',
+  },
+  {
+    id: 'valley-water-drip',
+    name: 'Drip Irrigation Rebate',
+    provider: 'Valley Water',
+    kind: 'irrigation',
+    url: `${VALLEY_WATER_PORTAL}/in-line-drip-conversion-requirements`,
+    state: 'CA',
+    counties: ['Santa Clara'],
+    note: 'For switching the sprinklers in your planting beds to drip tubing. Get approved first.',
+  },
+  {
+    id: 'valley-water-graywater',
+    name: 'Laundry to Landscape Rebate',
+    provider: 'Valley Water',
+    kind: 'reuse',
+    url: 'https://www.valleywater.org/saving-water/rebates-surveys/laundry-to-landscape-rebate',
+    state: 'CA',
+    counties: ['Santa Clara'],
+    pays: { dollars: 200, more: { dollars: 400, cities: ['Milpitas', 'Morgan Hill', 'Palo Alto', 'Santa Clara'] } },
+    note: "For a simple graywater system that waters your plants with your washing machine's rinse water.",
+  },
+  {
+    id: 'valley-water-rainwater',
+    name: 'Rainwater Capture Rebate',
+    provider: 'Valley Water',
+    kind: 'reuse',
+    url: `${VALLEY_WATER_PORTAL}/cistern-and-rain-barrel-rebate-requirements`,
+    state: 'CA',
+    counties: ['Santa Clara'],
+    note: 'For rain barrels, cisterns and rain gardens that catch the water off your roof. Get approved first.',
   },
   {
     id: 'valley-water-survey',
     name: 'Water Wise Outdoor Survey',
     provider: 'Valley Water',
     kind: 'survey',
-    url: VALLEY_WATER,
+    url: 'https://www.valleywater.org/saving-water/rebates-surveys/water-wise-irrigation-survey',
     state: 'CA',
     counties: ['Santa Clara'],
-    amount: 'Free',
     note: 'An expert checks your sprinklers and sets up a watering schedule for your yard.',
   },
   {
@@ -121,58 +167,88 @@ const PROGRAMS: Program[] = [
   },
 ];
 
-// ---------- the lawn's water savings ----------
-
-/** Low-water plants use ~0.2 × ET₀ (MWELO's "low water use" plant factor is 0.1–0.3). */
-const LOW_WATER_PLANT_FACTOR = 0.2;
-/** EPA: a WaterSense controller "can reduce an average home's irrigation water use by up to 30 percent". */
-const SMART_CONTROLLER_SAVINGS = 0.3;
+// ---------- what each program pays this lawn ----------
 
 function lawnRebateDollars({ rate, upTo = Infinity, thenRate = rate, max = Infinity }: NonNullable<Program['perSqFt']>, squareFeet: number) {
   const dollars = rate * Math.min(squareFeet, upTo) + thenRate * Math.max(0, squareFeet - upTo);
   return Math.min(max, dollars);
 }
 
-function savingsText(estimate: Estimate | null, share: number, units: Units, upTo: boolean) {
-  if (!estimate) return null;
-  const water = formatWater(Math.round((estimate.yearlyGallons * share) / 100) * 100, units);
-  return `${upTo ? 'Could save up to' : 'Saves about'} ${water} (${formatDollars(estimate.yearlyCost * share)}) a year`;
-}
-
-function fromProgram(program: Omit<Program, 'state'>, squareFeet: number, estimate: Estimate | null, units: Units): Rebate {
-  let amount = program.amount ?? null;
+function fromProgram(program: Omit<Program, 'state'>, squareFeet: number, city: string, units: Units): Rebate {
+  let amount: string | null = null;
   let dollars = 0;
-  let savings: string | null = null;
   if (program.perSqFt) {
     dollars = squareFeet > 0 ? lawnRebateDollars(program.perSqFt, squareFeet) : 0;
     amount = dollars > 0 ? `Up to ${formatDollars(dollars)}` : formatPricePerArea(program.perSqFt.rate, units);
-  }
-  if (program.kind === 'lawn' && estimate) {
-    savings = savingsText(estimate, 1 - LOW_WATER_PLANT_FACTOR / estimate.kc, units, false);
-  } else if (program.kind === 'irrigation') {
-    savings = savingsText(estimate, SMART_CONTROLLER_SAVINGS, units, true);
+  } else if (program.rate !== undefined) {
+    amount = formatPricePerArea(program.rate, units);
+  } else if (program.pays) {
+    const { more } = program.pays;
+    dollars = more?.cities.some((c) => same(c, city)) ? more.dollars : program.pays.dollars;
+    amount = formatDollars(dollars);
   }
   const { id, name, provider, kind, url } = program;
   // Program notes quote "$2 per sq ft" rates: shown per m² on the metric setting.
   const note = program.note.replace(/\$(\d+(?:\.\d+)?) per sq ft/g, (_, rate: string) => formatPricePerArea(Number(rate), units));
-  return { id, name, provider, kind, url, amount, dollars, savings, note };
+  return { id, name, provider, kind, url, amount, dollars, note };
 }
 
 // ---------- where the lawn is ----------
 
 type Place = { state: string; county: string; city: string };
 
-async function countyOf(lawn: Lawn): Promise<Place> {
-  const response = await fetch(
-    `https://geo.fcc.gov/api/census/block/find?latitude=${lawn.latitude}&longitude=${lawn.longitude}&censusYear=2020&format=json`,
+/** GETs JSON, giving up after 8 s. Throws on a network failure or a non-OK response. */
+async function getJson<T>(url: string): Promise<T> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(url, { headers: { Accept: 'application/json' }, signal: controller.signal });
+    if (!response.ok) throw new Error(`${url} answered ${response.status}`);
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const countyName = (name: string) => name.replace(/ (County|Parish|Borough|Census Area)$/, '');
+
+async function fccCounty({ latitude, longitude }: Lawn): Promise<string> {
+  const data = await getJson<{ County?: { name?: string } }>(
+    `https://geo.fcc.gov/api/census/block/find?latitude=${latitude}&longitude=${longitude}&censusYear=2020&format=json`,
   );
-  if (!response.ok) throw new Error(`County lookup failed (${response.status})`);
-  const data = (await response.json()) as { County?: { name?: string }; State?: { code?: string } };
-  return {
-    state: data.State?.code ?? lawn.state.trim().toUpperCase(),
-    county: (data.County?.name ?? '').replace(/ (County|Parish|Borough|Census Area)$/, ''),
-    city: lawn.city.trim(),
-  };
+  if (!data.County?.name) throw new Error('FCC lookup found no county');
+  return countyName(data.County.name);
+}
+
+async function censusCounty({ latitude, longitude }: Lawn): Promise<string> {
+  const data = await getJson<{ result?: { geographies?: { Counties?: { NAME?: string }[] } } }>(
+    `https://geocoding.geo.census.gov/geocoder/geographies/coordinates?x=${longitude}&y=${latitude}&benchmark=Public_AR_Current&vintage=Current_Current&layers=Counties&format=json`,
+  );
+  const name = data.result?.geographies?.Counties?.[0]?.NAME;
+  if (!name) throw new Error('Census lookup found no county');
+  return countyName(name);
+}
+
+/** Cities in the counties programs are listed by, for when the county can't be looked up. */
+const COUNTY_OF_CITY: Record<string, string> = Object.fromEntries(
+  [
+    'Campbell', 'Cupertino', 'Gilroy', 'Los Altos', 'Los Altos Hills', 'Los Gatos', 'Milpitas', 'Monte Sereno',
+    'Morgan Hill', 'Mountain View', 'Palo Alto', 'San Jose', 'Santa Clara', 'Saratoga', 'Sunnyvale',
+  ].map((city) => [city.toLowerCase(), 'Santa Clara']),
+);
+
+/** Where the lawn is; `known` is false when the county had to be guessed from the city. */
+async function countyOf(lawn: Lawn): Promise<Place & { known: boolean }> {
+  const city = (lawn.city ?? '').trim();
+  const state = (lawn.state ?? '').trim().toUpperCase();
+  for (const lookup of [fccCounty, censusCounty]) {
+    try {
+      return { state, county: await lookup(lawn), city, known: true };
+    } catch {
+      // Try the next one.
+    }
+  }
+  return { state, county: COUNTY_OF_CITY[city.toLowerCase()] ?? '', city, known: false };
 }
 
 const same = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
@@ -235,35 +311,49 @@ async function epaRebates(place: Place): Promise<Omit<Program, 'state'>[]> {
   });
 }
 
-// ---------- putting it together (cached for a week per place) ----------
+// ---------- putting it together (lookups cached for a week per place) ----------
 
 const CACHE_MS = 7 * 24 * 60 * 60_000;
 /** Shorter when EPA's list couldn't be loaded, so it's tried again soon. */
 const PARTIAL_CACHE_MS = 24 * 60 * 60_000;
-const STORAGE_PREFIX = 'lawnalyze/rebates/v1/';
+// Only what was looked up is kept (where the lawn is, and EPA's list): the programs above come
+// from here each time, so changes to them show up right away.
+const STORAGE_PREFIX = 'lawnalyze/rebates/v2/';
 
 type Found = { place: Place; programs: Omit<Program, 'state'>[] };
+type Looked = { place: Place; epa: Omit<Program, 'state'>[] | null };
 
-async function findPrograms(lawn: Lawn): Promise<Found> {
+async function lookUp(lawn: Lawn): Promise<Looked> {
   const key = `${STORAGE_PREFIX}${lawn.latitude.toFixed(3)},${lawn.longitude.toFixed(3)}`;
   const saved = await AsyncStorage.getItem(key).catch(() => null);
-  if (saved) {
-    const cached = JSON.parse(saved) as { at: number; ttl: number; found: Found };
-    if (Date.now() - cached.at < cached.ttl) return cached.found;
+  try {
+    const cached = saved ? (JSON.parse(saved) as { at: number; ttl: number; looked: Looked }) : null;
+    if (cached && Date.now() - cached.at < cached.ttl) return cached.looked;
+  } catch {
+    // A damaged entry: look it up again.
   }
-  const place = await countyOf(lawn);
-  const epa = await epaRebates(place).catch(() => null);
-  // Leave out EPA entries from agencies already covered above.
-  const verified = programsFor(place);
-  const providers = new Set(verified.map((p) => p.provider.toLowerCase()));
-  const extra = (epa ?? []).filter((p) => !providers.has(p.provider.toLowerCase()));
-  const found = { place, programs: [...verified, ...extra] };
-  const ttl = epa ? CACHE_MS : PARTIAL_CACHE_MS;
-  AsyncStorage.setItem(key, JSON.stringify({ at: Date.now(), ttl, found })).catch(() => {});
-  return found;
+  const { known, ...place } = await countyOf(lawn);
+  const looked = { place, epa: await epaRebates(place).catch(() => null) };
+  // A guessed county isn't kept, so it's looked up properly next time.
+  if (known) {
+    const ttl = looked.epa ? CACHE_MS : PARTIAL_CACHE_MS;
+    AsyncStorage.setItem(key, JSON.stringify({ at: Date.now(), ttl, looked })).catch(() => {});
+  }
+  return looked;
 }
 
-const KIND_ORDER: Record<RebateKind, number> = { lawn: 0, irrigation: 1, survey: 2 };
+async function findPrograms(lawn: Lawn): Promise<Found> {
+  const { place, epa } = await lookUp(lawn);
+  // Leave out EPA entries from agencies already covered above (EPA may use a longer name, like
+  // "Santa Clara Valley Water District" for Valley Water).
+  const verified = programsFor(place);
+  const providers = verified.map((p) => p.provider.toLowerCase());
+  const covered = (name: string) => providers.some((p) => name.toLowerCase().includes(p) || p.includes(name.toLowerCase()));
+  const extra = (epa ?? []).filter((p) => !covered(p.provider));
+  return { place, programs: [...verified, ...extra] };
+}
+
+const KIND_ORDER: Record<RebateKind, number> = { lawn: 0, irrigation: 1, reuse: 2, survey: 3 };
 
 export type RebatesResult =
   | { status: 'loading' }
@@ -271,7 +361,7 @@ export type RebatesResult =
   | { status: 'ready'; place: Place; rebates: Rebate[] };
 
 /** Rebates near the lawn, best first (lawn replacement pays and saves the most). */
-export function useRebates(lawn: Lawn | null, squareFeet: number, estimate: Estimate | null, units: Units): RebatesResult {
+export function useRebates(lawn: Lawn | null, squareFeet: number, units: Units): RebatesResult {
   const [found, setFound] = useState<{ key: string; value: Found | 'error' } | null>(null);
   const key = lawn ? `${lawn.latitude},${lawn.longitude},${lawn.city}` : null;
 
@@ -290,10 +380,11 @@ export function useRebates(lawn: Lawn | null, squareFeet: number, estimate: Esti
 
   if (!found || found.key !== key) return { status: 'loading' };
   if (found.value === 'error') return { status: 'error' };
-  const rebates = found.value.programs
-    .map((program) => fromProgram(program, squareFeet, estimate, units))
+  const { place, programs } = found.value;
+  const rebates = programs
+    .map((program) => fromProgram(program, squareFeet, place.city, units))
     .sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.dollars - a.dollars);
-  return { status: 'ready', place: found.value.place, rebates };
+  return { status: 'ready', place, rebates };
 }
 
 /** EPA's rebate search, for areas without a listed program. */
@@ -308,6 +399,5 @@ export const MORE_REBATES: Rebate = {
   url: REBATE_FINDER_URL,
   amount: null,
   dollars: 0,
-  savings: null,
   note: 'Search your state for sprinkler, smart controller and irrigation checkup rebates.',
 };

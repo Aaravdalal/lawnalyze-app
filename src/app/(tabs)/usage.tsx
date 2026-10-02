@@ -1,13 +1,16 @@
+import { useRef } from 'react';
+
 import { useAppState, type UsageSection } from '@/lib/app-state';
 import { useLawnEstimate, type Rating } from '@/lib/estimate';
 import { formatDollars, formatMoney, formatPercent } from '@/lib/format';
+import { useScreenVisits } from '@/lib/screen-shown';
 import { formatWater } from '@/lib/units';
 import { Artboard, TAB_CHIN_DROP, Layer } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
 import { DragSections, type SectionFrame } from '@/ui/DragSections';
 import { SwapRow } from '@/ui/SwapRow';
-import { WaterDrop } from '@/ui/WaterDrop';
+import { WaterDrop, type WaterDropHandle } from '@/ui/WaterDrop';
 
 const { common, usage } = ui;
 
@@ -34,6 +37,12 @@ const dropLevel = (percentOfNational: number) => Math.min(1, Math.max(0, percent
 export default function UsageScreen() {
   const { lawn, outlines, preferences, setPreferences } = useAppState();
   const estimate = useLawnEstimate(lawn, outlines);
+  // The drop pours in each time the tab has slid in, and drains once it's slid away.
+  const drop = useRef<WaterDropHandle>(null);
+  useScreenVisits(
+    () => drop.current?.pour(),
+    () => drop.current?.drain(),
+  );
 
   return (
     // The green glows behind the tabs are drawn once for all of them (TabGlows).
@@ -87,11 +96,14 @@ export default function UsageScreen() {
             <>
               <Layer asset={usage.titleComparison} x={17} y={236} />
               <Layer asset={usage.boxDrop} x={24} y={264} />
-              {estimate ? (
-                <WaterDrop x={38} y={274} size={132} level={dropLevel(estimate.percentOfNational)} />
-              ) : (
-                <Layer asset={usage.waterDrop} x={38} y={274} />
-              )}
+              {/* Empty until the estimate is in, then it fills up. */}
+              <WaterDrop
+                ref={drop}
+                x={38}
+                y={274}
+                size={132}
+                level={estimate ? dropLevel(estimate.percentOfNational) : 0}
+              />
               <Layer asset={usage.box115x70} x={194} y={264} />
               <Layer asset={usage.box115x70} x={194} y={345} />
               {estimate && (
