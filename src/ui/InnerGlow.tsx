@@ -4,8 +4,8 @@ import { Animated, Easing, Platform, StyleSheet, View } from 'react-native';
 import { GREEN } from './Artboard';
 
 // Green light that glows in from a shape's edges: a bright rim, and past it soft tongues of light
-// reaching in different depths and drifting about. The address boxes glow like this, as do the
-// best rebate and the edges of the screen.
+// reaching in different depths and drifting about. The address boxes glow like this, and so do the
+// rebate boxes (the same glow, stretched to their size).
 
 /**
  * A glow's timing (ms): it comes up, stays at least a moment (so even a quick lookup shows all
@@ -67,28 +67,28 @@ export function boxSlots(w: number, h: number): Slot[] {
   return slots;
 }
 
-/** Where tongues sit (dp) all the way round a big w x h area (like the screen), reaching in up to `depth`. */
-export function edgeSlots(w: number, h: number, depth: number): Slot[] {
-  const slots: Slot[] = [];
-  const along = (length: number) => {
-    const n = Math.max(2, Math.round(length / (depth * TONGUE_SPACING)));
-    return { n, step: length / n };
-  };
-  const across = along(w);
-  for (const edge of [0, h]) {
-    for (let k = 0; k < across.n; k++) {
-      const { step } = across;
-      slots.push({ left: step * (k - 0.8), top: edge - depth, width: step * 2.6, height: depth * 2, across: 'y', sway: step * 0.3 });
-    }
-  }
-  const down = along(h);
-  for (const edge of [0, w]) {
-    for (let k = 0; k < down.n; k++) {
-      const { step } = down;
-      slots.push({ left: edge - depth, top: step * (k - 0.8), width: depth * 2, height: step * 2.6, across: 'x', sway: step * 0.3 });
-    }
-  }
-  return slots;
+/**
+ * A w x h box's tongues laid out as on a `model` box (e.g. an address box) and stretched to fit,
+ * so the box glows just like the model, only at its own size; `reach` < 1 keeps the light that
+ * much closer to the edges.
+ */
+export function boxSlotsLike(model: { w: number; h: number }, w: number, h: number, reach = 1): Slot[] {
+  const sx = w / model.w;
+  const sy = h / model.h;
+  return boxSlots(model.w, model.h).map((slot) => {
+    // Each tongue is centered on its edge: shortened, it stays on it.
+    const width = slot.width * sx * (slot.across === 'x' ? reach : 1);
+    const height = slot.height * sy * (slot.across === 'y' ? reach : 1);
+    return {
+      left: (slot.left + slot.width / 2) * sx - width / 2,
+      top: (slot.top + slot.height / 2) * sy - height / 2,
+      width,
+      height,
+      across: slot.across,
+      // Along its edge: across the box for a top or bottom tongue, up and down for one at an end.
+      sway: slot.sway * (slot.across === 'y' ? sx : sy),
+    };
+  });
 }
 
 type Tongue = { reach: Animated.Value; sway: Animated.Value };
@@ -236,7 +236,7 @@ export function useInnerGlow(slots: Slot[]): InnerGlowEngine {
 /** The bright rim (dp): a crisp line, then softer light just inside it, and softer still further in. */
 export type Rim = { line: number; near: { blur: number; spread: number }; far: { blur: number; spread: number } };
 
-/** The rim of the address boxes and other boxes their size, at design scale `s`. */
+/** The rim of the address boxes (and of boxes glowing like them), at design scale `s`. */
 export const boxRim = (s: number): Rim => ({ line: 1.4 * s, near: { blur: 6 * s, spread: 1.5 * s }, far: { blur: 12 * s, spread: 3 * s } });
 
 type Rect = { position: 'absolute'; left: number; top: number; width: number; height: number };

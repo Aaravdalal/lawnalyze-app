@@ -12,50 +12,68 @@ import { formatArea } from '@/lib/units';
 import { Artboard, TAB_CHIN_DROP, Layer, useFrame, useRect } from '@/ui/Artboard';
 import { ui } from '@/ui/assets';
 import { GrowPressable } from '@/ui/GrowPressable';
-import { InnerGlow, boxRim, boxSlots, edgeSlots, useInnerGlow, type Rim } from '@/ui/InnerGlow';
+import { InnerGlow, boxRim, boxSlotsLike, useInnerGlow } from '@/ui/InnerGlow';
 
 const { common, rebates: art } = ui;
 
 const GREY = '#5E6167';
 const MONEY = '#1F9D55';
 const BOX_BORDER = '#CCCDCE';
-const BUTTON = { x: 49, y: 506, w: 243, h: 44 };
+/** The blue button (design pts), low on the card: placed from the card's bottom edge (anchor 'footer'). */
+const BUTTON = { x: 49, y: 498, w: 243, h: 44 };
 /** The boxes (design pts): the best one, then the other choices, each this far below the last. */
 const BOX_X = 23;
 const BEST_Y = 130;
 const OTHERS_LABEL_Y = 259;
 const OTHER_Y = 287;
 const OTHER_STEP = 109;
-/** The best box's corner radius in its Figma export (design pts). */
+/** The boxes' corner radii in their Figma exports (design pts). */
 const BEST_RADIUS = 25;
+const OTHER_RADIUS = 20;
 /**
- * Everything above the button scrolls once there's more than fits: from just below the status
- * bar down to here (design y), fading out over FADE_H (design pts) at the bottom and in over
- * TOP_FADE (dp) at the top.
+ * A box glows just like an address box does, stretched to its size, though its light reaches in
+ * a little less far (GLOW_REACH of the way): the boxes are much taller than an address box.
  */
-const VIEW_BOTTOM = 500;
-const FADE_H = 18;
-const TOP_FADE = 14;
-/** The arrow for more choices: a round button this wide (design pts) on the last box's bottom edge. */
-const ARROW_D = 28;
+const GLOW_MODEL = common.inputAddress;
+const GLOW_REACH = 0.8;
+/**
+ * Once "More" is tapped, everything above the button scrolls: from just below the status bar down
+ * to the top of the button. Wherever the list goes on past one of those edges, it fades out into
+ * the card there, coming in as it's scrolled FADE_IN (design pts) away from that end: over
+ * FADE_TOP (design pts) at the top, and over the taller FADE_BOTTOM at the bottom, which is all
+ * white for its last BOTTOM_SOLID share so no words show through just above the button or beside
+ * its ends. (That white ends at the button, which covers the faint green of the background.)
+ */
+const FADE_TOP = 32;
+const FADE_BOTTOM = 48;
+const BOTTOM_SOLID = 0.3;
+const FADE_IN = 24;
+/**
+ * The fades reach this far (dp) past the edges the list is cut off at, so the list's last row of
+ * pixels is always under solid white, however the edges round to the phone's pixels.
+ */
+const FADE_OVERHANG = 2;
+/**
+ * "More" (or "Less") under the last box: a pill this big (design pts), halfway between the third
+ * box and the button (at least `minGap` from each); at the end of the open list, "Less" keeps the
+ * same distance from the last box, and as much room under it.
+ */
+const MORE = { w: 76, h: 28, minGap: 4 };
 /**
  * Showing more choices: they rise into place one after another (each `rise` design pts, over
- * `ms`, `stagger` ms apart) while the list scrolls up to put "Other Choices" this far from the top.
+ * `ms`, `stagger` ms apart), each surging green as it comes, while the list scrolls up to put
+ * "Other Choices" just below the top fade.
  */
 const REVEAL = { ms: 420, stagger: 80, rise: 26 };
-const REVEAL_TOP_GAP = 18;
 /** Out of sight this long (ms, past the tabs' slide), the list folds back up, so the best choice shows next time. */
 const FOLD_AFTER_MS = 400;
 /** Folding the list back up: it scrolls to the top first, which takes about this long (ms). */
 const FOLD_SCROLL_MS = 350;
-/** The screen's edges glowing: how far (dp) the light reaches in, and the screen's rounded corners. */
-const EDGE = { depth: 72, corner: 40 };
-const EDGE_RIM: Rim = { line: 2, near: { blur: 16, spread: 4 }, far: { blur: 44, spread: 14 } };
 const useNativeDriver = Platform.OS !== 'web';
 
 // Lawnalyze UI (6)/(19). Real rebates for the lawn's area (see lib/rebates.ts): the best one on
-// top, two more below, and the rest behind the arrow under them. Tap a box (or the button) to
-// open the program's page.
+// top, two more below, and the rest behind "More" under them. Tap a box (or the button) to open
+// the program's page.
 export default function RebatesScreen() {
   return (
     // The green glows behind the tabs are drawn once for all of them (TabGlows).
@@ -83,18 +101,15 @@ function RebatesCard() {
   // The best choice glows green each time the tab is opened (and as it appears, if the rebates
   // come in while it's showing).
   const bestRect = useRect({ x: BOX_X, y: BEST_Y }, art.boxBest.w, art.boxBest.h);
-  const bestSlots = useMemo(() => boxSlots(bestRect.width, bestRect.height), [bestRect.width, bestRect.height]);
+  const bestSlots = useMemo(() => boxSlotsLike(GLOW_MODEL, bestRect.width, bestRect.height, GLOW_REACH), [bestRect.width, bestRect.height]);
   const bestGlow = useInnerGlow(bestSlots);
-  // The screen's edges glow as more choices are revealed.
-  const screenRect = { position: 'absolute' as const, left: 0, top: 0, width: frame.width, height: frame.height };
-  const screenSlots = useMemo(() => edgeSlots(frame.width, frame.height, EDGE.depth), [frame.width, frame.height]);
-  const screenGlow = useInnerGlow(screenSlots);
 
   const [open, setOpen] = useState(false);
   const scroll = useRef<ScrollView>(null);
+  // How far the list is scrolled (dp), which shows its fades.
+  const [scrollY] = useState(() => new Animated.Value(0));
   // Scroll to the new choices once they're laid out (see onContentSizeChange).
   const revealing = useRef(false);
-  const [reveal] = useState(() => new Animated.Value(0));
   const later = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(later.current), []);
 
@@ -129,14 +144,6 @@ function RebatesCard() {
     clearTimeout(later.current);
     revealing.current = true;
     setOpen(true);
-    screenGlow.flash();
-    reveal.setValue(0);
-    Animated.timing(reveal, {
-      toValue: 1,
-      duration: REVEAL.ms + REVEAL.stagger * Math.max(0, more.length - 1),
-      easing: Easing.linear,
-      useNativeDriver,
-    }).start();
   }
   function showFewer() {
     scroll.current?.scrollTo({ y: 0, animated: true });
@@ -144,29 +151,29 @@ function RebatesCard() {
     later.current = setTimeout(() => setOpen(false), FOLD_SCROLL_MS);
   }
 
-  // Each revealed box fades in as it rises into place, a little after the one before.
-  const moreCount = more.length;
-  const rising = useMemo(() => {
-    const total = REVEAL.ms + REVEAL.stagger * Math.max(0, moreCount - 1);
-    return Array.from({ length: moreCount }, (_, k) => {
-      const from = (REVEAL.stagger * k) / total;
-      const to = (REVEAL.stagger * k + REVEAL.ms) / total;
-      const t = reveal.interpolate({ inputRange: [0, from, to, 1], outputRange: [0, 0, 1, 1], easing: Easing.out(Easing.cubic) });
-      return {
-        opacity: t,
-        transform: [{ translateY: t.interpolate({ inputRange: [0, 1], outputRange: [REVEAL.rise * s, 0] }) }],
-      };
-    });
-  }, [moreCount, reveal, s]);
-
   const otherY = (k: number) => OTHER_Y + OTHER_STEP * k;
-  // The last box showing, which the arrow sits on.
-  const lastBottom = otherY(open ? 1 + more.length : 1) + art.boxOther.h;
   // The list scrolls in the space between the status bar and the button. Its content is laid out
   // in screen coordinates like everything else (shifted up by the status bar to line up).
   const viewTop = insets.top;
-  const viewBottom = frame.top(VIEW_BOTTOM);
-  const contentBottom = open ? Math.max(viewBottom, frame.top(lastBottom + ARROW_D / 2 + 24)) : viewBottom;
+  const viewBottom = frame.top(BUTTON.y, 'footer');
+  // "More" goes halfway between the third box and the button (design pts of room either side).
+  const foldedBottom = otherY(1) + art.boxOther.h;
+  const moreGap = Math.max(MORE.minGap, ((viewBottom - frame.top(foldedBottom)) / s - MORE.h) / 2);
+  // The last box showing, with "More" (or "Less") under it.
+  const lastBottom = otherY(open ? 1 + more.length : 1) + art.boxOther.h;
+  const listEnd = more.length > 0 ? lastBottom + moreGap * 2 + MORE.h : lastBottom;
+  const contentBottom = Math.max(viewBottom, frame.top(listEnd));
+  const maxScroll = Math.round(contentBottom - viewBottom);
+
+  // The fades show only where the list goes on past an edge: the top one once it's scrolled down
+  // a little, the bottom one until it's scrolled to the end.
+  const fades = useMemo(() => {
+    const ramp = FADE_IN * s;
+    return {
+      top: scrollY.interpolate({ inputRange: [0, ramp], outputRange: [0, 1], extrapolate: 'clamp' }),
+      bottom: scrollY.interpolate({ inputRange: [maxScroll - ramp, maxScroll], outputRange: [1, 0], extrapolate: 'clamp' }),
+    };
+  }, [scrollY, maxScroll, s]);
 
   // Dev shortcut: long-press the blue button to start onboarding over.
   function restartOnboarding() {
@@ -176,7 +183,7 @@ function RebatesCard() {
 
   return (
     <>
-      <ScrollView
+      <Animated.ScrollView
         ref={scroll}
         style={{ position: 'absolute', left: 0, top: viewTop, width: frame.width, height: viewBottom - viewTop }}
         contentContainerStyle={{ height: contentBottom - viewTop }}
@@ -184,10 +191,13 @@ function RebatesCard() {
         showsVerticalScrollIndicator={false}
         overScrollMode="never"
         bounces={false}
+        scrollEventThrottle={16}
+        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver })}
         onContentSizeChange={() => {
           if (!revealing.current) return;
           revealing.current = false;
-          scroll.current?.scrollTo({ y: frame.top(OTHERS_LABEL_Y - REVEAL_TOP_GAP) - frame.top(0), animated: true });
+          // "Other Choices" goes up to just below the top fade.
+          scroll.current?.scrollTo({ y: frame.top(OTHERS_LABEL_Y) - viewTop - (FADE_TOP + 6) * s, animated: true });
         }}
       >
         <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, top: -viewTop, width: frame.width, height: contentBottom }}>
@@ -213,45 +223,75 @@ function RebatesCard() {
           {[0, 1].map((k) => (
             <OtherBox key={k} y={otherY(k)} rebate={others[k]} />
           ))}
-          {open &&
-            more.map((rebate, k) => (
-              <Animated.View key={rebate.id} pointerEvents="box-none" style={[StyleSheet.absoluteFill, rising[k]]}>
-                <OtherBox y={otherY(2 + k)} rebate={rebate} />
-              </Animated.View>
-            ))}
+          {open && more.map((rebate, k) => <RevealedBox key={rebate.id} y={otherY(2 + k)} rebate={rebate} delay={REVEAL.stagger * k} />)}
 
           {more.length > 0 && (
-            <MoreArrow
-              y={lastBottom}
+            <MoreButton
+              y={lastBottom + moreGap}
               open={open}
               count={more.length}
               onPress={open ? showFewer : showMore}
             />
           )}
         </View>
-      </ScrollView>
-      {open && <Fade top={viewTop} height={TOP_FADE} toward="up" />}
-      {open && <Fade top={frame.top(VIEW_BOTTOM - FADE_H)} height={FADE_H * s} toward="down" />}
+      </Animated.ScrollView>
+      <Fade top={viewTop - FADE_OVERHANG} height={FADE_TOP * s + FADE_OVERHANG} toward="up" opacity={fades.top} />
+      <Fade
+        top={viewBottom - FADE_BOTTOM * s}
+        height={FADE_BOTTOM * s + FADE_OVERHANG}
+        toward="down"
+        solid={BOTTOM_SOLID}
+        opacity={fades.bottom}
+      />
 
       <BlueButton
         label={best ? 'See How to Apply' : 'Find Rebates Near You'}
         onPress={() => Linking.openURL(best?.url ?? REBATE_FINDER_URL)}
         onLongPress={restartOnboarding}
       />
-      <InnerGlow rect={screenRect} radius={EDGE.corner} slots={screenSlots} glow={screenGlow} rim={EDGE_RIM} />
     </>
   );
 }
 
-/** One of the other choices, in the Figma box. */
-function OtherBox({ y, rebate }: { y: number; rebate?: Rebate }) {
+/** One of the other choices, in the Figma box (`children`, like a glow, go over the box, under its words). */
+function OtherBox({ y, rebate, children }: { y: number; rebate?: Rebate; children?: ReactNode }) {
   return (
     <>
       <Layer asset={art.boxOther} x={BOX_X} y={y} />
+      {children}
       <Box y={y} h={art.boxOther.h} url={rebate?.url}>
         {rebate && <OtherRebate rebate={rebate} />}
       </Box>
     </>
+  );
+}
+
+/**
+ * A choice "More" revealed: `delay` ms after the tap, it fades in as it rises into place, surging
+ * green as it comes.
+ */
+function RevealedBox({ y, rebate, delay }: { y: number; rebate: Rebate; delay: number }) {
+  const rect = useRect({ x: BOX_X, y }, art.boxOther.w, art.boxOther.h);
+  const { scale: s } = useFrame();
+  const slots = useMemo(() => boxSlotsLike(GLOW_MODEL, rect.width, rect.height, GLOW_REACH), [rect.width, rect.height]);
+  const glow = useInnerGlow(slots);
+  const [rise] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    glow.flash(delay);
+    const rising = Animated.timing(rise, { toValue: 1, duration: REVEAL.ms, delay, easing: Easing.out(Easing.cubic), useNativeDriver });
+    rising.start();
+    return () => rising.stop();
+  }, [glow, rise, delay]);
+  const style = useMemo(
+    () => ({ opacity: rise, transform: [{ translateY: rise.interpolate({ inputRange: [0, 1], outputRange: [REVEAL.rise * s, 0] }) }] }),
+    [rise, s],
+  );
+  return (
+    <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, style]}>
+      <OtherBox y={y} rebate={rebate}>
+        <InnerGlow rect={rect} radius={OTHER_RADIUS * s} slots={slots} glow={glow} rim={boxRim(s)} />
+      </OtherBox>
+    </Animated.View>
   );
 }
 
@@ -286,10 +326,12 @@ function BestRebate({ rebate, squareFeet }: { rebate: Rebate; squareFeet: number
           {perLawn && <Text style={[styles.small, { fontSize: 11.5 * s }]}>{`  for your ${formatArea(squareFeet, preferences.units)} lawn`}</Text>}
         </Text>
       )}
-      {/* Under the amount there's room for one line: the note's first sentence. */}
-      <Text numberOfLines={rebate.amount ? 1 : 2} style={[styles.small, { fontSize: 11 * s, lineHeight: 14 * s, marginTop: 2 * s }]}>
-        {rebate.amount ? (rebate.note.match(/^.*?\.(?=\s|$)/)?.[0] ?? rebate.note) : rebate.note}
-      </Text>
+      {/* With an amount, that says it all; without one, the note says what it's for. */}
+      {!rebate.amount && (
+        <Text numberOfLines={2} style={[styles.small, { fontSize: 11 * s, lineHeight: 14 * s, marginTop: 2 * s }]}>
+          {rebate.note}
+        </Text>
+      )}
     </>
   );
 }
@@ -314,9 +356,9 @@ function OtherRebate({ rebate }: { rebate: Rebate }) {
   );
 }
 
-/** The round arrow on the last box's bottom edge: down to show more choices, up to fold them away. */
-function MoreArrow({ y, open, count, onPress }: { y: number; open: boolean; count: number; onPress: () => void }) {
-  const rect = useRect({ x: BOX_X + 295 / 2 - ARROW_D / 2, y: y - ARROW_D / 2 }, ARROW_D, ARROW_D);
+/** "More" with a down arrow under the last box (design y of its top): "Less" and up once open. */
+function MoreButton({ y, open, count, onPress }: { y: number; open: boolean; count: number; onPress: () => void }) {
+  const rect = useRect({ x: BOX_X + 295 / 2 - MORE.w / 2, y }, MORE.w, MORE.h);
   const { scale: s } = useFrame();
   const label = open ? 'Show fewer rebates' : `Show ${count} more ${count === 1 ? 'rebate' : 'rebates'}`;
   return (
@@ -325,13 +367,14 @@ function MoreArrow({ y, open, count, onPress }: { y: number; open: boolean; coun
       accessibilityLabel={label}
       hitSlop={10 * s}
       onPress={onPress}
-      style={[rect, styles.arrow, { borderRadius: rect.width / 2, borderWidth: 1 * s }]}
+      style={[rect, styles.more, { borderRadius: rect.height / 2, borderWidth: 1 * s }]}
     >
-      <Svg width={rect.width * 0.6} height={rect.width * 0.6} viewBox="0 0 24 24">
+      <Text style={[styles.moreLabel, { fontSize: 13 * s }]}>{open ? 'Less' : 'More'}</Text>
+      <Svg width={15 * s} height={15 * s} viewBox="0 0 24 24" style={{ marginLeft: 3 * s }}>
         <Path
           d={open ? 'M6.5 14.5L12 9l5.5 5.5' : 'M6.5 9.5L12 15l5.5-5.5'}
           stroke={GREY}
-          strokeWidth={2.2}
+          strokeWidth={2.4}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"
@@ -342,22 +385,51 @@ function MoreArrow({ y, open, count, onPress }: { y: number; open: boolean; coun
 }
 
 /**
- * The scrolling list fading out into the white card at an edge of the space it scrolls in
- * (`top` and `height` in dp): `toward` that edge, it's all white.
+ * How a fade's white comes in, from none (offset 0, the list's side) to all: eased in and out
+ * (smoothstep), so it has no visible edge of its own, and all white for the last `solid` of it.
  */
-function Fade({ top, height, toward }: { top: number; height: number; toward: 'up' | 'down' }) {
+function fadeStops(solid: number) {
+  return Array.from({ length: 11 }, (_, i) => {
+    const u = Math.min(1, i / 10 / (1 - solid));
+    return { offset: i / 10, opacity: u * u * (3 - 2 * u) };
+  });
+}
+
+/**
+ * The scrolling list fading out into the white card at an edge of the space it scrolls in
+ * (`top` and `height` in dp): `toward` that edge, it's all white (for the last `solid` of it).
+ * Shown as much as `opacity`.
+ */
+function Fade({
+  top,
+  height,
+  toward,
+  solid = 0,
+  opacity,
+}: {
+  top: number;
+  height: number;
+  toward: 'up' | 'down';
+  solid?: number;
+  opacity: Animated.AnimatedInterpolation<number>;
+}) {
   const { width } = useFrame();
   const id = `fade-${toward}`;
+  const stops = useMemo(() => fadeStops(solid), [solid]);
   return (
-    <Svg pointerEvents="none" style={{ position: 'absolute', left: 0, top, width, height }} width={width} height={height}>
-      <Defs>
-        <LinearGradient id={id} x1="0" y1={toward === 'down' ? 0 : 1} x2="0" y2={toward === 'down' ? 1 : 0}>
-          <Stop offset="0" stopColor="#fff" stopOpacity={0} />
-          <Stop offset="1" stopColor="#fff" stopOpacity={1} />
-        </LinearGradient>
-      </Defs>
-      <Rect x={0} y={0} width={width} height={height} fill={`url(#${id})`} />
-    </Svg>
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', left: 0, top, width, height, opacity }}>
+      <Svg width={width} height={height}>
+        <Defs>
+          <LinearGradient id={id} x1="0" y1={toward === 'down' ? 0 : 1} x2="0" y2={toward === 'down' ? 1 : 0}>
+            {stops.map((stop) => (
+              <Stop key={stop.offset} offset={stop.offset} stopColor="#fff" stopOpacity={stop.opacity} />
+            ))}
+          </LinearGradient>
+        </Defs>
+        {/* A little past the top and bottom: an edge ending partway through a row of pixels would leave that row partly see-through. */}
+        <Rect x={0} y={-1} width={width} height={height + 2} fill={`url(#${id})`} />
+      </Svg>
+    </Animated.View>
   );
 }
 
@@ -373,7 +445,7 @@ function Status({ title, text }: { title?: string; text: string }) {
 
 /** The Figma blue button (drawn here: the export has another screen's label baked in). */
 function BlueButton({ label, onPress, onLongPress }: { label: string; onPress: () => void; onLongPress: () => void }) {
-  const rect = useRect({ x: BUTTON.x, y: BUTTON.y }, BUTTON.w, BUTTON.h);
+  const rect = useRect({ x: BUTTON.x, y: BUTTON.y, anchor: 'footer' }, BUTTON.w, BUTTON.h);
   const { scale: s } = useFrame();
   return (
     <GrowPressable
@@ -396,7 +468,8 @@ const styles = StyleSheet.create({
   grow: { flex: 1 },
   center: { alignItems: 'center' },
   centerText: { textAlign: 'center' },
-  arrow: { backgroundColor: '#fff', borderColor: BOX_BORDER, alignItems: 'center', justifyContent: 'center' },
+  more: { flexDirection: 'row', backgroundColor: '#fff', borderColor: BOX_BORDER, alignItems: 'center', justifyContent: 'center' },
+  moreLabel: { fontFamily: 'GoogleSansFlex_500Medium', color: GREY },
   // Same blue, outline and shape as the Figma "Mark My Lawn" button.
   button: { backgroundColor: '#0086FF', borderColor: '#6DC8FD', alignItems: 'center', justifyContent: 'center' },
   buttonLabel: { fontFamily: 'GoogleSansFlex_400Regular', color: '#fff' },

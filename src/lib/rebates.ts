@@ -42,10 +42,11 @@ type Program = {
   cities?: string[];
   /** $ per sq ft of lawn replaced: `rate` for the first `upTo` sq ft, then `thenRate`; at most `max`. */
   perSqFt?: { rate: number; upTo?: number; thenRate?: number; max?: number };
-  /** $ per sq ft where the program doesn't say how much it pays at most: shown as the rate. */
-  rate?: number;
-  /** A set amount; `more` pays `amount` in the cities listed instead. */
-  pays?: { dollars: number; more?: { dollars: number; cities: string[] } };
+  /**
+   * A set amount; `more` pays its `dollars` in the cities listed instead, and to some homes in
+   * the `someIn` cities (those on a particular water company), shown as a range there.
+   */
+  pays?: { dollars: number; more?: { dollars: number; cities: string[]; someIn?: string[] } };
   note: string;
 };
 
@@ -64,18 +65,7 @@ const PROGRAMS: Program[] = [
     state: 'CA',
     counties: ['Santa Clara'],
     perSqFt: { rate: 2, max: 3000 },
-    note: '$2 per sq ft to replace lawn with low-water plants. Get approved before removing any grass.',
-  },
-  {
-    id: 'valley-water-mulch',
-    name: 'Lawn to Mulch Rebate',
-    provider: 'Valley Water',
-    kind: 'lawn',
-    url: `${VALLEY_WATER_PORTAL}/lawn-to-mulch-requirements`,
-    state: 'CA',
-    counties: ['Santa Clara'],
-    rate: 1,
-    note: '$1 per sq ft to cover lawn with mulch instead. Get approved before removing any grass.',
+    note: '$2 per sq ft to replace lawn with low-water plants.',
   },
   {
     id: 'valley-water-irrigation',
@@ -85,7 +75,7 @@ const PROGRAMS: Program[] = [
     url: `${VALLEY_WATER_PORTAL}/irrigation-equipment-requirements`,
     state: 'CA',
     counties: ['Santa Clara'],
-    note: 'For weather-based sprinkler controllers, rain sensors and more. Get approved first.',
+    note: 'For weather-based sprinkler controllers, rain sensors and more.',
   },
   {
     id: 'valley-water-drip',
@@ -95,7 +85,7 @@ const PROGRAMS: Program[] = [
     url: `${VALLEY_WATER_PORTAL}/in-line-drip-conversion-requirements`,
     state: 'CA',
     counties: ['Santa Clara'],
-    note: 'For switching the sprinklers in your planting beds to drip tubing. Get approved first.',
+    note: 'For switching the sprinklers in your planting beds to drip tubing.',
   },
   {
     id: 'valley-water-graywater',
@@ -105,7 +95,9 @@ const PROGRAMS: Program[] = [
     url: 'https://www.valleywater.org/saving-water/rebates-surveys/laundry-to-landscape-rebate',
     state: 'CA',
     counties: ['Santa Clara'],
-    pays: { dollars: 200, more: { dollars: 400, cities: ['Milpitas', 'Morgan Hill', 'Palo Alto', 'Santa Clara'] } },
+    // $400 for customers of these cities' own water utilities (in San Jose, only San Jose
+    // Municipal Water's: most of the city is on San Jose Water).
+    pays: { dollars: 200, more: { dollars: 400, cities: ['Milpitas', 'Morgan Hill', 'Palo Alto', 'Santa Clara'], someIn: ['San Jose'] } },
     note: "For a simple graywater system that waters your plants with your washing machine's rinse water.",
   },
   {
@@ -116,7 +108,7 @@ const PROGRAMS: Program[] = [
     url: `${VALLEY_WATER_PORTAL}/cistern-and-rain-barrel-rebate-requirements`,
     state: 'CA',
     counties: ['Santa Clara'],
-    note: 'For rain barrels, cisterns and rain gardens that catch the water off your roof. Get approved first.',
+    note: 'For rain barrels, cisterns and rain gardens that catch the water off your roof.',
   },
   {
     id: 'valley-water-survey',
@@ -137,7 +129,7 @@ const PROGRAMS: Program[] = [
     state: 'CA',
     counties: ['Los Angeles', 'Orange', 'San Diego', 'Riverside', 'San Bernardino', 'Ventura'],
     perSqFt: { rate: 2, upTo: 5000, thenRate: 0 },
-    note: '$2 per sq ft, and your local water agency may add more. Reserve funds before you start.',
+    note: '$2 per sq ft, and your local water agency may add more.',
   },
   {
     id: 'snwa-wsl',
@@ -148,7 +140,7 @@ const PROGRAMS: Program[] = [
     state: 'NV',
     counties: ['Clark'],
     perSqFt: { rate: 5, upTo: 10000, thenRate: 2.5 },
-    note: '$5 per sq ft to replace grass with desert landscaping. A site visit is required first.',
+    note: '$5 per sq ft to replace grass with desert landscaping.',
   },
   {
     id: 'ebmud-lawn',
@@ -163,7 +155,7 @@ const PROGRAMS: Program[] = [
       'Lafayette', 'Moraga', 'Orinda', 'Walnut Creek', 'Danville', 'Alamo', 'San Ramon',
     ],
     perSqFt: { rate: 1, max: 2000 },
-    note: 'For EBMUD customers: $1 per sq ft, or $2 per sq ft with the Super Rebate. Get approval first.',
+    note: 'For EBMUD customers: $1 per sq ft, or $2 per sq ft with the Super Rebate.',
   },
 ];
 
@@ -180,12 +172,12 @@ function fromProgram(program: Omit<Program, 'state'>, squareFeet: number, city: 
   if (program.perSqFt) {
     dollars = squareFeet > 0 ? lawnRebateDollars(program.perSqFt, squareFeet) : 0;
     amount = dollars > 0 ? `Up to ${formatDollars(dollars)}` : formatPricePerArea(program.perSqFt.rate, units);
-  } else if (program.rate !== undefined) {
-    amount = formatPricePerArea(program.rate, units);
   } else if (program.pays) {
     const { more } = program.pays;
     dollars = more?.cities.some((c) => same(c, city)) ? more.dollars : program.pays.dollars;
     amount = formatDollars(dollars);
+    // Only some of the city's homes get the higher amount (it depends on their water company).
+    if (more?.someIn?.some((c) => same(c, city))) amount = `${formatDollars(dollars)}–${formatDollars(more.dollars)}`;
   }
   const { id, name, provider, kind, url } = program;
   // Program notes quote "$2 per sq ft" rates: shown per m² on the metric setting.
@@ -244,10 +236,17 @@ async function countyOf(lawn: Lawn): Promise<Place & { known: boolean }> {
   for (const lookup of [fccCounty, censusCounty]) {
     try {
       return { state, county: await lookup(lawn), city, known: true };
-    } catch {
-      // Try the next one.
+    } catch (error) {
+      console.warn(`Rebates: ${lookup.name} failed`, error); // then try the next one
     }
   }
+  return guessedPlace(lawn);
+}
+
+/** Where the lawn is going by its city alone (offline, or the lookups failed). */
+function guessedPlace(lawn: Lawn): Place & { known: false } {
+  const city = (lawn.city ?? '').trim();
+  const state = (lawn.state ?? '').trim().toUpperCase();
   return { state, county: COUNTY_OF_CITY[city.toLowerCase()] ?? '', city, known: false };
 }
 
@@ -318,7 +317,7 @@ const CACHE_MS = 7 * 24 * 60 * 60_000;
 const PARTIAL_CACHE_MS = 24 * 60 * 60_000;
 // Only what was looked up is kept (where the lawn is, and EPA's list): the programs above come
 // from here each time, so changes to them show up right away.
-const STORAGE_PREFIX = 'lawnalyze/rebates/v2/';
+const STORAGE_PREFIX = 'lawnalyze/rebates/v3/';
 
 type Found = { place: Place; programs: Omit<Program, 'state'>[] };
 type Looked = { place: Place; epa: Omit<Program, 'state'>[] | null };
@@ -327,8 +326,10 @@ async function lookUp(lawn: Lawn): Promise<Looked> {
   const key = `${STORAGE_PREFIX}${lawn.latitude.toFixed(3)},${lawn.longitude.toFixed(3)}`;
   const saved = await AsyncStorage.getItem(key).catch(() => null);
   try {
-    const cached = saved ? (JSON.parse(saved) as { at: number; ttl: number; looked: Looked }) : null;
-    if (cached && Date.now() - cached.at < cached.ttl) return cached.looked;
+    const cached = saved ? (JSON.parse(saved) as { at?: number; ttl?: number; looked?: Partial<Looked> }) : null;
+    // Only a complete entry counts (one saved by an older version may be shaped differently).
+    const { at = 0, ttl = 0, looked } = cached ?? {};
+    if (looked?.place && Date.now() - at < ttl) return { place: looked.place, epa: looked.epa ?? null };
   } catch {
     // A damaged entry: look it up again.
   }
@@ -343,13 +344,18 @@ async function lookUp(lawn: Lawn): Promise<Looked> {
 }
 
 async function findPrograms(lawn: Lawn): Promise<Found> {
-  const { place, epa } = await lookUp(lawn);
+  // Whatever goes wrong looking things up, the programs for the lawn's city still show.
+  const { place, epa } = await lookUp(lawn).catch((error) => {
+    console.warn('Rebates: lookup failed', error);
+    const { known, ...place } = guessedPlace(lawn);
+    return { place, epa: null };
+  });
   // Leave out EPA entries from agencies already covered above (EPA may use a longer name, like
   // "Santa Clara Valley Water District" for Valley Water).
   const verified = programsFor(place);
   const providers = verified.map((p) => p.provider.toLowerCase());
   const covered = (name: string) => providers.some((p) => name.toLowerCase().includes(p) || p.includes(name.toLowerCase()));
-  const extra = (epa ?? []).filter((p) => !covered(p.provider));
+  const extra = (epa ?? []).filter((p) => typeof p.provider === 'string' && !covered(p.provider));
   return { place, programs: [...verified, ...extra] };
 }
 
@@ -360,23 +366,35 @@ export type RebatesResult =
   | { status: 'error' }
   | { status: 'ready'; place: Place; rebates: Rebate[] };
 
+/** After a failed search, it's tried again this often (ms) until it works. */
+const RETRY_MS = 5_000;
+
 /** Rebates near the lawn, best first (lawn replacement pays and saves the most). */
 export function useRebates(lawn: Lawn | null, squareFeet: number, units: Units): RebatesResult {
   const [found, setFound] = useState<{ key: string; value: Found | 'error' } | null>(null);
+  // Bumped to try again after a failure (the screen stays open, so it would never retry otherwise).
+  const [attempt, setAttempt] = useState(0);
   const key = lawn ? `${lawn.latitude},${lawn.longitude},${lawn.city}` : null;
 
   useEffect(() => {
     if (!lawn || !key) return;
     let active = true;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     findPrograms(lawn)
       .then((value) => active && setFound({ key, value }))
-      .catch(() => active && setFound({ key, value: 'error' }));
+      .catch((error) => {
+        console.warn('Rebates: could not be found', error);
+        if (!active) return;
+        setFound({ key, value: 'error' });
+        retry = setTimeout(() => setAttempt((n) => n + 1), RETRY_MS);
+      });
     return () => {
       active = false;
+      clearTimeout(retry);
     };
     // `key` covers the parts of the lawn that matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, attempt]);
 
   if (!found || found.key !== key) return { status: 'loading' };
   if (found.value === 'error') return { status: 'error' };

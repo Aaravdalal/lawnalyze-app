@@ -41,9 +41,9 @@ export const temperature = (fahrenheit: number, units: Units) =>
 export const formatTemperature = (fahrenheit: number, units: Units) =>
   `${temperature(fahrenheit, units)}°${metric(units) ? 'C' : 'F'}`;
 
-/** Rain: "0.3 in." or "8 mm". */
+/** Rain: "0.3 in." (under a tenth: "0.04 in.") or "8 mm". */
 export const formatRain = (inches: number, units: Units) =>
-  metric(units) ? `${Math.round(inches * MM_PER_INCH)} mm` : `${inches.toFixed(1)} in.`;
+  metric(units) ? `${Math.round(inches * MM_PER_INCH)} mm` : `${inches.toFixed(inches < 0.1 ? 2 : 1)} in.`;
 
 /** A price per area of lawn: "$2 per sq ft" or "$21.53 per m²". */
 export function formatPricePerArea(dollarsPerSqFt: number, units: Units): string {
