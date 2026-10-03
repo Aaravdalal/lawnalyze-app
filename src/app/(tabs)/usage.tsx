@@ -33,7 +33,7 @@ const dropLevel = (percentOfNational: number) => Math.min(1, Math.max(0, percent
 
 // Lawnalyze UI (5)/(18). Estimated water use and cost for the marked lawn, weather-adjusted
 // (see lib/estimate.ts). Boxes stay empty until a lawn area is marked and the data loads.
-// Press and hold a section to drag it somewhere else (Settings > Reset Placement puts them back).
+// Press and hold a section to drag it somewhere else.
 export default function UsageScreen() {
   const { lawn, outlines, preferences, setPreferences } = useAppState();
   const estimate = useLawnEstimate(lawn, outlines);
@@ -46,7 +46,7 @@ export default function UsageScreen() {
 
   return (
     // The green glows behind the tabs are drawn once for all of them (TabGlows).
-    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP} loadsLater>
       <Layer asset={common.logoSmall} x={23} y={26.5} />
 
       <DragSections

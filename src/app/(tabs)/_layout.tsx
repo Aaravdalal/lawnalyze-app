@@ -6,6 +6,7 @@ import { PanGestureHandler, State, type PanGestureHandlerStateChangeEvent } from
 
 import { TAB_CHIN_DROP, useFrameMetrics } from '@/ui/Artboard';
 import { PAGE_SLIDE as SLIDE } from '@/ui/motion';
+import { Reveal } from '@/ui/Reveal';
 import { TabGlows } from '@/ui/TabGlows';
 import { TabNav } from '@/ui/TabNav';
 
@@ -33,6 +34,8 @@ const HANDOFF_MS = 1000;
 /** Same as the navigator's own slide, which the swipe runs in step with. */
 const useNativeDriver = Platform.OS !== 'web';
 const EPSILON = 1e-3;
+/** The tabs show once Home is all loaded, or after this long (ms) anyway (e.g. offline). */
+const REVEAL_MAX_MS = 2500;
 
 type SceneInterpolator = NonNullable<BottomTabNavigationOptions['sceneStyleInterpolator']>;
 /** How far (dp) a swipe has moved the screens; negative is toward the next tab. */
@@ -233,8 +236,13 @@ export default function TabsLayout() {
           setSize((was) => (was.width === width && was.height === height ? was : { width, height }));
         }}
       >
-        <TabGlows at={shown} width={size.width} />
-        {tabs}
+        {/* Arriving (from Welcome, or the end of setup), Home shows all at once: the glows, its
+            pictures, map, weather and costs. The other tabs are built just after, out of sight
+            (see Reveal, and Artboard's loadsLater). */}
+        <Reveal maxWait={REVEAL_MAX_MS}>
+          <TabGlows at={shown} width={size.width} />
+          {tabs}
+        </Reveal>
       </Animated.View>
     </PanGestureHandler>
   );

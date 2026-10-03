@@ -13,6 +13,7 @@ import { Artboard, TAB_CHIN_DROP, Layer, useFrame, useRect } from '@/ui/Artboard
 import { ui } from '@/ui/assets';
 import { DesignText } from '@/ui/DesignText';
 import { DragSections, type SectionFrame } from '@/ui/DragSections';
+import { useHoldWhile } from '@/ui/Reveal';
 import { DIMENSIONS_FIT_PADDING, SatelliteSlot } from '@/ui/SatelliteSlot';
 import { SwapRow } from '@/ui/SwapRow';
 import { WeatherWidget } from '@/ui/WeatherWidget';
@@ -28,11 +29,14 @@ const SECTIONS: Record<HomeSection, SectionFrame> = {
 
 // Lawnalyze UI (4)/(17). Live weather for the lawn's city, the marked lawn areas, and the
 // weather-adjusted watering cost (see lib/estimate.ts). Press and hold a section to drag it
-// somewhere else (Settings > Reset Placement puts them back).
+// somewhere else.
 export default function HomeScreen() {
   const { lawn, outlines, preferences, setPreferences } = useAppState();
   const estimate = useLawnEstimate(lawn, outlines);
   const weather = useWeather(lawn);
+  // Arriving on the tabs, they show once the weather and costs are in too (both start loading
+  // at launch), so nothing pops in afterwards.
+  useHoldWhile(!!lawn && (!weather || (outlines.length > 0 && !estimate)));
   const { units, showDimensions } = preferences;
   const labels = useMemo(
     () => (showDimensions ? dimensionLabels(outlines, units) : undefined),

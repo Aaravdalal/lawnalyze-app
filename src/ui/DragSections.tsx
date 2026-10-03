@@ -99,7 +99,7 @@ export function DragSections<K extends string>({ frames, order, onReorder, child
     for (const k of keys) if (k !== except) Animated.spring(anim[k].y, { toValue: offsets[k], ...GLIDE }).start();
   }
 
-  // A new saved order that didn't come from a drag here (e.g. Reset Placement in Settings).
+  // A new saved order that didn't come from a drag here.
   const orderKey = order.join();
   useEffect(() => {
     if (drag.current || shown.current.join() === orderKey) return;

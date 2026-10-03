@@ -1,4 +1,3 @@
-import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Animated, Easing, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -77,14 +76,14 @@ const useNativeDriver = Platform.OS !== 'web';
 export default function RebatesScreen() {
   return (
     // The green glows behind the tabs are drawn once for all of them (TabGlows).
-    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP} loadsLater>
       <RebatesCard />
     </Artboard>
   );
 }
 
 function RebatesCard() {
-  const { lawn, outlines, preferences, resetOnboarding } = useAppState();
+  const { lawn, outlines, preferences } = useAppState();
   const frame = useFrame();
   const s = frame.scale;
   const insets = useSafeAreaInsets();
@@ -175,12 +174,6 @@ function RebatesCard() {
     };
   }, [scrollY, maxScroll, s]);
 
-  // Dev shortcut: long-press the blue button to start onboarding over.
-  function restartOnboarding() {
-    resetOnboarding();
-    router.replace('/onboarding');
-  }
-
   return (
     <>
       <Animated.ScrollView
@@ -247,7 +240,6 @@ function RebatesCard() {
       <BlueButton
         label={best ? 'See How to Apply' : 'Find Rebates Near You'}
         onPress={() => Linking.openURL(best?.url ?? REBATE_FINDER_URL)}
-        onLongPress={restartOnboarding}
       />
     </>
   );
@@ -444,7 +436,7 @@ function Status({ title, text }: { title?: string; text: string }) {
 }
 
 /** The Figma blue button (drawn here: the export has another screen's label baked in). */
-function BlueButton({ label, onPress, onLongPress }: { label: string; onPress: () => void; onLongPress: () => void }) {
+function BlueButton({ label, onPress }: { label: string; onPress: () => void }) {
   const rect = useRect({ x: BUTTON.x, y: BUTTON.y, anchor: 'footer' }, BUTTON.w, BUTTON.h);
   const { scale: s } = useFrame();
   return (
@@ -452,7 +444,8 @@ function BlueButton({ label, onPress, onLongPress }: { label: string; onPress: (
       accessibilityRole="button"
       accessibilityLabel={label}
       onPress={onPress}
-      onLongPress={onLongPress}
+      // Holding it does nothing: only a tap opens the page.
+      onLongPress={() => {}}
       style={[rect, styles.button, { borderRadius: (BUTTON.h / 2) * s, borderWidth: 1.5 * s }]}
     >
       <Text style={[styles.buttonLabel, { fontSize: 17 * s }]}>{label}</Text>

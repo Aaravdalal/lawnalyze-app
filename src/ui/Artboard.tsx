@@ -10,6 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ui, type UiAsset } from './assets';
 import { GrowPressable } from './GrowPressable';
+import { LoadsLater, useLoadHold } from './Reveal';
 
 // Every screen is laid out on the 340 x 640 Figma frame and scaled to fit the device.
 export const DESIGN_WIDTH = 340;
@@ -84,10 +85,15 @@ type ArtboardProps = {
   gradientY?: number;
   /** Shorter green area under the card (used on the intro screen). */
   compactChin?: boolean | number;
+  /**
+   * Out of sight while another screen appears (like the tabs besides Home): it's built once that
+   * screen has shown, and its pictures load in their own time, not holding it up (see Reveal).
+   */
+  loadsLater?: boolean;
   children: ReactNode;
 };
 
-export function Artboard({ cardBottom, glows = [], gradientY, compactChin = false, children }: ArtboardProps) {
+export function Artboard({ cardBottom, glows = [], gradientY, compactChin = false, loadsLater = false, children }: ArtboardProps) {
   const metrics = useFrameMetrics(compactChin);
   const { height } = metrics;
   // On Android the window height can exclude the gesture bar, so measure what's really drawn.
@@ -95,21 +101,17 @@ export function Artboard({ cardBottom, glows = [], gradientY, compactChin = fals
   const bottom = drawnHeight ?? height;
   const frame: Frame = { ...metrics, chinCenter: (metrics.top(cardBottom, 'footer') + bottom) / 2 };
 
-  return (
-    <FrameContext.Provider value={frame}>
-      {/* See-through: the white page and green chin are drawn once behind every screen (SharedChin). */}
-      <View
-        style={styles.root}
-        onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}
-      >
-        {gradientY !== undefined && <Gradient y={gradientY} />}
-        {glows.map((glow, i) => (
-          <Layer key={i} asset={glow.asset} x={glow.x} y={glow.y} />
-        ))}
-        {children}
-      </View>
-    </FrameContext.Provider>
+  const content = (
+    // See-through: the white page and green chin are drawn once behind every screen (SharedChin).
+    <View style={styles.root} onLayout={(e) => setDrawnHeight(e.nativeEvent.layout.height)}>
+      {gradientY !== undefined && <Gradient y={gradientY} />}
+      {glows.map((glow, i) => (
+        <Layer key={i} asset={glow.asset} x={glow.x} y={glow.y} />
+      ))}
+      {children}
+    </View>
   );
+  return <FrameContext.Provider value={frame}>{loadsLater ? <LoadsLater>{content}</LoadsLater> : content}</FrameContext.Provider>;
 }
 
 /**
@@ -118,10 +120,13 @@ export function Artboard({ cardBottom, glows = [], gradientY, compactChin = fals
  */
 export function Gradient({ y }: { y: number }) {
   const frame = useFrame();
+  const loaded = useLoadHold();
   return (
     <Image
       source={ui.common.gradient.source}
       resizeMode="stretch"
+      onLoad={loaded}
+      onError={loaded}
       style={[styles.abs, { left: 0, top: 0, width: frame.width, height: frame.top(y + ui.common.gradient.h) }]}
     />
   );
@@ -157,12 +162,16 @@ type LayerProps = Rect & {
  */
 export function Layer({ asset, x, y, anchor, flip, tint }: LayerProps) {
   const rect = useRect({ x, y, anchor }, asset.w, asset.h);
+  // Inside a Reveal, the screen waits for it (so it all shows at once).
+  const loaded = useLoadHold();
   return (
     <View style={[rect, styles.noTouch, flip && styles.flip]}>
       <Image
         source={asset.source}
         resizeMode="stretch"
         tintColor={tint}
+        onLoad={loaded}
+        onError={loaded}
         style={{ width: rect.width, height: rect.height }}
       />
     </View>
@@ -196,6 +205,7 @@ export function PressableLayer({
   const h = asset.h * grow;
   // Grow around the center (chin layers are already centered on their y).
   const rect = useRect({ x: x - (w - asset.w) / 2, y: anchor === 'chin' ? y : y - (h - asset.h) / 2, anchor }, w, h);
+  const loaded = useLoadHold();
   return (
     <GrowPressable
       accessibilityRole="button"
@@ -210,6 +220,8 @@ export function PressableLayer({
       <Image
         source={asset.source}
         resizeMode="stretch"
+        onLoad={loaded}
+        onError={loaded}
         style={{ position: 'absolute', left: 0, top: 0, width: rect.width, height: rect.height }}
       />
       {children}

@@ -6,7 +6,7 @@ import type { LatLng } from './location';
 export type Lawn = LatLng & { address: string; city: string; state: string };
 /** US customary (gallons, sq ft, °F) or metric (liters, m², °C). */
 export type Units = 'customary' | 'metric';
-/** The three sections of the Home screen, which can be put in any order (Settings > Edit Placement). */
+/** The three sections of the Home screen, which can be put in any order (press and hold one, then drag it). */
 export type HomeSection = 'weather' | 'lawns' | 'cost';
 export const HOME_SECTIONS: HomeSection[] = ['weather', 'lawns', 'cost'];
 /** The three sections of the Usage screen, which can be put in any order the same way. */
@@ -55,7 +55,8 @@ type AppState = StoredState & {
   setLawn: (lawn: Lawn) => void;
   setOutlines: (outlines: Outline[]) => void;
   completeOnboarding: () => void;
-  resetOnboarding: () => void;
+  /** Forgets the lawn and its marked areas, to set them up again (settings stay). */
+  resetPlace: () => void;
   setPreferences: (preferences: Preferences) => void;
 };
 
@@ -112,7 +113,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         }),
       setOutlines: (outlines) => update({ outlines }),
       completeOnboarding: () => update({ onboarded: true }),
-      resetOnboarding: () => setState(INITIAL_STATE),
+      resetPlace: () => update({ onboarded: false, lawn: null, outlines: [] }),
       setPreferences: (preferences) => update({ preferences }),
     }),
     [state, ready, update],

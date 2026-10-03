@@ -7,6 +7,7 @@ import type { Outline } from '@/lib/app-state';
 import type { MapLabel } from '@/lib/dimensions';
 import type { LatLng } from '@/lib/location';
 import { textWidthEm } from '@/ui/DesignText';
+import { useLoadHold } from '@/ui/Reveal';
 
 import { LAWN_BLUE as BLUE, LAWN_FILL_OPACITY } from './satelliteHtml';
 
@@ -183,6 +184,8 @@ const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const Tile = memo(function Tile({ x, y, z, left, top, size }: { x: number; y: number; z: number; left: number; top: number; size: number }) {
   const [retry, setRetry] = useState(0);
   const [failedAt, setFailedAt] = useState<number | null>(null);
+  // Inside a Reveal, the screen waits for its imagery (a failed try doesn't hold it up).
+  const loaded = useLoadHold();
   useEffect(() => {
     if (failedAt === null || retry >= 5) return;
     const timer = setTimeout(() => setRetry((r) => r + 1), 600 * (retry + 1));
@@ -193,7 +196,11 @@ const Tile = memo(function Tile({ x, y, z, left, top, size }: { x: number; y: nu
       source={{ uri: tileUrl(x, y, z, retry) }}
       cachePolicy="memory-disk"
       transition={0}
-      onError={() => setFailedAt(Date.now())}
+      onLoad={loaded}
+      onError={() => {
+        loaded();
+        setFailedAt(Date.now());
+      }}
       style={{ position: 'absolute', left, top, width: size, height: size }}
     />
   );

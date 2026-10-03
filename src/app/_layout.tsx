@@ -7,17 +7,27 @@ import {
 import { DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppStateProvider, useAppState } from '@/lib/app-state';
-import { prefetchClimate, useLawnEstimate } from '@/lib/estimate';
+import { KC_COOL_SEASON, prefetchClimate, useLawnEstimate } from '@/lib/estimate';
 import { prefetchWeather } from '@/lib/weather';
 import { requestWeatherAlertPermission, syncWeatherAlerts, weatherAlertsSupported } from '@/lib/weather-alerts';
+import { prefetchUiImages } from '@/ui/assets';
+import { Reveal } from '@/ui/Reveal';
 import { SharedChin } from '@/ui/SharedChin';
 
 SplashScreen.preventAutoHideAsync();
+
+/**
+ * The splash screen stays up until the first screen is all there (every picture in), so it
+ * appears all at once: at most this long (ms) though...
+ */
+const SPLASH_MAX_MS = 4000;
+/** ...and once nothing is loading, this long (ms) with nothing new starting (the first screen comes a moment after the app). */
+const SPLASH_SETTLE_MS = 250;
 
 // Screens are see-through, so the page and green chin drawn behind them (SharedChin) show.
 const THEME = { ...DefaultTheme, colors: { ...DefaultTheme.colors, background: 'transparent' } };
@@ -40,9 +50,12 @@ function RootNavigator() {
   useDailyWeatherAlerts();
   const loaded = ready && (fontsLoaded || !!fontError);
 
-  useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
+  // The first screen is all there: off with the splash screen, and start loading the pictures
+  // for the screens further on.
+  const firstScreenShown = useCallback(() => {
+    SplashScreen.hideAsync().catch(() => {});
+    prefetchUiImages();
+  }, []);
 
   // Start loading the weather as soon as the lawn's location is known (at launch, or right
   // after it's found during onboarding), so Home's widget and estimates are ready on arrival.
@@ -57,16 +70,19 @@ function RootNavigator() {
   if (!loaded) return null;
 
   return (
-    <View style={{ flex: 1 }}>
-      <StatusBar style="dark" />
-      {/* One green chin for every screen: it stays put while screens fade in and out. */}
-      <SharedChin />
-      <ThemeProvider value={THEME}>
-        <Stack
-          screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }}
-        />
-      </ThemeProvider>
-    </View>
+    // Behind the splash screen (so not hidden here): the first screen loads, then shows.
+    <Reveal hide={false} maxWait={SPLASH_MAX_MS} settle={SPLASH_SETTLE_MS} onReveal={firstScreenShown}>
+      <View style={{ flex: 1 }}>
+        <StatusBar style="dark" />
+        {/* One green chin for every screen: it stays put while screens fade in and out. */}
+        <SharedChin />
+        <ThemeProvider value={THEME}>
+          <Stack
+            screenOptions={{ headerShown: false, animation: 'fade', contentStyle: { backgroundColor: 'transparent' } }}
+          />
+        </ThemeProvider>
+      </View>
+    </Reveal>
   );
 }
 
@@ -100,6 +116,11 @@ function useDailyWeatherAlerts() {
 
   const outlinesKey = JSON.stringify(outlines);
   useEffect(() => {
+    // No lawn (e.g. Settings > Reset Place): no more updates for the old one.
+    if (ready && !lawn) {
+      syncWeatherAlerts({ enabled: false, lawn: null, outlines: [], units: preferences.units, kc: KC_COOL_SEASON });
+      return;
+    }
     if (!ready || !onboarded || kc === undefined) return;
     syncWeatherAlerts({ enabled: preferences.weatherAlerts, lawn, outlines, units: preferences.units, kc });
     // outlinesKey stands in for outlines (same content, new array after every load).

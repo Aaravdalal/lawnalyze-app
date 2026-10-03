@@ -1,3 +1,5 @@
+import { Image, Platform } from 'react-native';
+
 // Figma layers exported from the Lawnalyze UI zips, with their 1x design sizes (the
 // design frame is 340pt wide). Positions for each layer live in the screen files.
 
@@ -114,3 +116,19 @@ export const ui = {
     welcome: { source: require('../../assets/ui/welcome/welcome.png'), w: 129, h: 22 },
   },
 } satisfies Record<string, Record<string, UiAsset>>;
+
+/**
+ * Starts loading every picture above into the phone's image cache, so the screens further on
+ * show at once. (Only pictures from the dev server, as in Expo Go: an installed app has them
+ * on the phone already.)
+ */
+export function prefetchUiImages() {
+  // (The web build's pictures come from the same server as the page; nothing to do there.)
+  if (Platform.OS === 'web') return;
+  for (const group of Object.values(ui)) {
+    for (const asset of Object.values(group)) {
+      const uri = Image.resolveAssetSource(asset.source)?.uri;
+      if (uri?.startsWith('http')) Image.prefetch(uri).catch(() => {});
+    }
+  }
+}

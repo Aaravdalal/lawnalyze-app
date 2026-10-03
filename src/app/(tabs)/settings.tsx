@@ -2,7 +2,7 @@ import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { HOME_SECTIONS, USAGE_SECTIONS, useAppState, type Units } from '@/lib/app-state';
+import { useAppState, type Units } from '@/lib/app-state';
 import { dimensionLabels } from '@/lib/dimensions';
 import { KC_COOL_SEASON, useLawnEstimate } from '@/lib/estimate';
 import { requestWeatherAlertPermission, sendWeatherAlertNow, weatherAlertsSupported } from '@/lib/weather-alerts';
@@ -14,15 +14,17 @@ import { DIMENSIONS_FIT_PADDING, SatelliteSlot } from '@/ui/SatelliteSlot';
 
 const { common, settings } = ui;
 
-/** The Edit Lawn / Show dimensions / Reset Placement buttons sit this much lower than in Figma. */
+/** The Edit Lawn / Show dimensions / Reset Place buttons sit this much lower than in Figma. */
 const EDIT_SHIFT = 16;
 
 type Message = { title: string; message: string; openSettings?: boolean };
 
 // Lawnalyze UI (7).zip. Choices apply as soon as they're tapped.
 export default function SettingsScreen() {
-  const { lawn, outlines, preferences, setPreferences } = useAppState();
+  const { lawn, outlines, preferences, setPreferences, resetPlace } = useAppState();
   const [message, setMessage] = useState<Message | null>(null);
+  // Reset Place was tapped: asks first, since the marked lawn is lost.
+  const [confirmReset, setConfirmReset] = useState(false);
   const { showDimensions } = preferences;
   const estimate = useLawnEstimate(lawn, outlines);
   const labels = useMemo(
@@ -57,6 +59,14 @@ export default function SettingsScreen() {
     }
   }
 
+  // Reset Place: forget the lawn and its marked areas, and set them up again from Locate (with
+  // nothing behind it to go back to: the old lawn is gone).
+  function startOver() {
+    setConfirmReset(false);
+    resetPlace();
+    router.replace('/onboarding/locate');
+  }
+
   function closeMessage() {
     if (message?.openSettings) Linking.openSettings().catch(() => {});
     setMessage(null);
@@ -66,7 +76,7 @@ export default function SettingsScreen() {
 
   return (
     // The green glows behind the tabs are drawn once for all of them (TabGlows).
-    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP}>
+    <Artboard cardBottom={568} compactChin={TAB_CHIN_DROP} loadsLater>
       <Layer asset={common.logoSmall} x={24} y={26.5} />
       <Layer asset={settings.titleSettings} x={24} y={95} />
 
@@ -138,16 +148,14 @@ export default function SettingsScreen() {
         onPress={() => setPreferences({ ...preferences, showDimensions: !showDimensions })}
       />
 
-      <ResetPlacementButton
-        y={y(489)}
-        onPress={() => {
-          setPreferences({ ...preferences, homeOrder: HOME_SECTIONS, usageOrder: USAGE_SECTIONS });
-          setMessage({
-            title: 'Placement reset',
-            message:
-              'Home and Usage are back to their original layouts. To move things around, press and hold a section, then drag it.',
-          });
-        }}
+      <ResetPlaceButton y={y(489)} onPress={() => setConfirmReset(true)} />
+      <Dialog
+        visible={confirmReset}
+        title="Reset your place?"
+        message="Your lawn and the areas you marked will be cleared, and you'll set them up again from the start. Your settings stay as they are."
+        buttonLabel="Cancel"
+        onClose={() => setConfirmReset(false)}
+        action={{ label: 'Reset', onPress: startOver, destructive: true }}
       />
       <Dialog
         visible={message !== null}
@@ -205,14 +213,14 @@ function ToggleRow({ y, on, onPress }: { y: number; on: boolean; onPress: () => 
   );
 }
 
-/** Puts Home's sections back in their original order (they're rearranged by dragging on Home). */
-function ResetPlacementButton({ y, onPress }: { y: number; onPress: () => void }) {
+/** Starts the lawn's setup over: find it, mark it, confirm its size (see startOver). */
+function ResetPlaceButton({ y, onPress }: { y: number; onPress: () => void }) {
   const rect = useRect({ x: 189, y }, 130, 34);
   const { scale: s } = useFrame();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Reset Placement"
+      accessibilityLabel="Reset Place"
       onPress={onPress}
       style={({ pressed }) => [
         rect,
@@ -222,7 +230,7 @@ function ResetPlacementButton({ y, onPress }: { y: number; onPress: () => void }
     >
       <View style={[styles.inner, { borderRadius: 13 * s }]}>
         <Text style={[styles.label, { fontSize: 13 * s }]} maxFontSizeMultiplier={1.1}>
-          Reset Placement
+          Reset Place
         </Text>
       </View>
     </Pressable>
